@@ -1,0 +1,55 @@
+import type { Db } from './db.ts';
+import { audit, DomainError } from './db.ts';
+import { hashPin } from './auth.ts';
+
+const CODE_PATTERN = /^[a-z0-9][a-z0-9-]{1,30}$/i;
+const USERNAME_PATTERN = /^[a-z0-9._-]{2,32}$/i;
+const MIN_PIN_LENGTH = 6;
+const MAX_OPS_LIMIT = 1000;
+
+export interface NewCompany {
+  name: string;
+  code: string;
+  storeName: string;
+  ownerName: string;
+  ownerUsername: string;
+  ownerPin: string;
+  douyinPoiId?: string;
+}
+
+/** SaaS onboarding: one tenant, its first store, an owner, and sensible default commission rules. */
+export async function createCompany(db: Db, input: NewCompany): Promise<{ tenantId: number; storeId: number; ownerId: number }> {
+  const required = [input.name, input.code, input.storeName, input.ownerName, input.ownerUsername, input.ownerPin];
+  if (!required.every((v) => typeof v === 'string')) throw new DomainError('name, code, storeName, ownerName, ownerUsername and ownerPin must all be text', 422);
+  if (!input.name?.trim() || !input.storeName?.trim() || !input.ownerName?.trim()) throw new DomainError('name, storeName and ownerName are required', 422);
+  if (!CODE_PATTERN.test(input.code ?? '')) throw new DomainError('company code: 2-31 letters, digits or hyphens', 422);
+  if (!USERNAME_PATTERN.test(input.ownerUsername ?? '')) throw new DomainError('username: 2-32 letters, digits, . _ -', 422);
+  if (!input.ownerPin || input.ownerPin.length < MIN_PIN_LENGTH) throw new DomainError(`owner PIN needs at least ${MIN_PIN_LENGTH} characters`, 422);
+  return db.tx(async (t) => {
+    if (await t.one('SELECT 1 AS x FROM tenants WHERE lower(code) = lower(?)', [input.code])) throw new DomainError('company code already taken', 409);
+    const tenantId = await t.insert('INSERT INTO tenants (name, code, created_at) VALUES (?,?,?)', [input.name.trim(), input.code, Date.now()]);
+    const storeId = await t.insert('INSERT INTO stores (tenant_id, name, code, douyin_poi_id, created_at) VALUES (?,?,?,?,?)', [tenantId, input.storeName.trim(), 'MAIN', input.douyinPoiId ?? null, Date.now()]);
+    const ownerId = await t.insert('INSERT INTO employees (tenant_id, store_id, name, role, pin_hash, username) VALUES (?,NULL,?,?,?,?)',
+      [tenantId, input.ownerName.trim(), 'owner', hashPin(input.ownerPin), input.ownerUsername]);
+    await t.run('INSERT INTO commission_rules (store_id, role, category, bps, fixed) VALUES (?,?,?,?,?)', [storeId, 'sales', null, 500, 0]);
+    await t.run('INSERT INTO commission_rules (store_id, role, category, bps, fixed) VALUES (?,?,?,?,?)', [storeId, 'waiter', null, 200, 0]);
+    await audit(t, { tenantId, storeId, actorId: ownerId }, 'company.create', 'tenant', tenantId, { code: input.code, name: input.name });
+    return { tenantId, storeId, ownerId };
+  });
+}
+
+export function listCompanies(db: Db) {
+  return db.all(
+    `SELECT t.id, t.code, t.name, t.active, t.created_at AS "createdAt",
+       (SELECT COUNT(*) FROM stores s WHERE s.tenant_id = t.id) AS stores,
+       (SELECT COUNT(*) FROM employees e WHERE e.tenant_id = t.id) AS staff,
+       (SELECT COUNT(*) FROM bills b JOIN stores s ON s.id = b.store_id WHERE s.tenant_id = t.id AND b.status = 'settled') AS bills
+     FROM tenants t ORDER BY t.id`);
+}
+
+export async function recentOps(db: Db, limit = 200, level?: string) {
+  if (limit < 1) throw new DomainError('limit must be at least 1', 422);
+  return db.all(
+    `SELECT id, ts, level, kind, message, detail, tenant_id AS "tenantId", store_id AS "storeId" FROM ops_events
+     WHERE (?::text IS NULL OR level = ?) ORDER BY id DESC LIMIT ?`, [level ?? null, level ?? null, Math.min(Math.max(limit, 1), MAX_OPS_LIMIT)]);
+}

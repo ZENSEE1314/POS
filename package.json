@@ -1,0 +1,23 @@
+{
+  "name": "nightpos",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/server.ts",
+    "dev": "node scripts/dev.ts",
+    "simulate": "node scripts/simulate.ts",
+    "seed": "node src/seed.ts",
+    "test": "node --test \"test/*.test.ts\""
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.16",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite-socket": "^0.2.19"
+  }
+}
