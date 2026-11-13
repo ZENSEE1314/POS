@@ -53,3 +53,5 @@ Webhook `POST /webhooks/douyin` (HMAC `x-douyin-signature`), `POST /webhooks/wec
 
 ## Self-healing (runs every minute and on demand)
 Expires stale stash and unpaid online payments (>15 min); frees tables flagged occupied with no open bill; marks tables with an open bill occupied; settles fully-paid bills that never settled. Alerts (not auto-fixed): settled bills that are underpaid, negative stock.
+
+`POST /platform/companies/:code/active {active:false|true}`: suspend or restore a company (login blocked, sessions revoked, data kept).

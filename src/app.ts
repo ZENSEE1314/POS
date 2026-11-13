@@ -20,7 +20,7 @@ import {
   adjustStock, closeShift, collectReceivable, createProduct, createRule, createTable, currentShift, dailyReport, deleteRule,
   listReceivables, listRules, listShifts, listStaff, openShift, searchMembers, updateProduct, updateStaff, updateTable,
 } from './admin.ts';
-import { createCompany, listCompanies, recentOps } from './platform.ts';
+import { createCompany, listCompanies, recentOps, setCompanyActive } from './platform.ts';
 import { logEvent, Metrics, RateLimiter, selfHeal } from './ops.ts';
 import { cleanPhone, normalizePhone } from './phone.ts';
 
@@ -306,6 +306,10 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
   // ---- platform operator (SaaS owner) ----
   route('GET', '/platform/companies', false, ({ db }) => listCompanies(db));
   route('POST', '/platform/companies', false, ({ db, body }) => createCompany(db, body));
+  route('POST', '/platform/companies/:code/active', false, async ({ db, params, body }) => {
+    await setCompanyActive(db, decodeURIComponent(params[0]), body.active !== false);
+    return { ok: true };
+  });
   route('GET', '/platform/ops', false, ({ db, query }) => recentOps(db, num(query.get('limit') ?? 200), query.get('level') ?? undefined));
   route('GET', '/platform/metrics', false, () => metrics.snapshot());
   route('POST', '/platform/selfheal', false, ({ db }) => selfHeal(db));

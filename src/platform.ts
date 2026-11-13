@@ -53,3 +53,10 @@ export async function recentOps(db: Db, limit = 200, level?: string) {
     `SELECT id, ts, level, kind, message, detail, tenant_id AS "tenantId", store_id AS "storeId" FROM ops_events
      WHERE (?::text IS NULL OR level = ?) ORDER BY id DESC LIMIT ?`, [level ?? null, level ?? null, Math.min(Math.max(limit, 1), MAX_OPS_LIMIT)]);
 }
+
+/** Suspends (or restores) a company: its staff can no longer log in and live sessions stop working. Data is kept. */
+export async function setCompanyActive(db: Db, code: string, active: boolean): Promise<void> {
+  const n = await db.run("UPDATE tenants SET active = ? WHERE lower(code) = lower(?)", [active, code]);
+  if (!n) throw new DomainError("company not found", 404);
+  if (!active) await db.run("DELETE FROM sessions WHERE employee_id IN (SELECT e.id FROM employees e JOIN tenants t ON t.id = e.tenant_id WHERE lower(t.code) = lower(?))", [code]);
+}
