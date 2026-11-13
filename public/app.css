@@ -262,3 +262,28 @@ table.data .num, .num { text-align: right; font-variant-numeric: tabular-nums; w
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
 }
+
+/* ---------- offline sync pill and panel ---------- */
+.sync-host { display: inline-flex; }
+.sync-pill { display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--tap-size); padding: 0 var(--space-3); font: inherit; font-size: var(--text-sm); font-weight: var(--weight-bold); color: var(--color-muted); background: var(--color-surface-hi); border: 1px solid var(--color-border); border-radius: var(--radius-full); cursor: pointer; }
+.sync-pill--success { color: var(--color-success); background: var(--color-success-bg); }
+.sync-pill--warning { color: var(--color-warning); background: var(--color-warning-bg); border-color: var(--color-warning); }
+.sync-pill--danger { color: var(--color-destructive); background: var(--color-destructive-bg); border-color: var(--color-destructive); }
+.sync-pill--info { color: var(--color-accent-text); }
+.sync-list { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); list-style: none; padding: 0; }
+.sync-item { padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-hi); }
+.sync-item--danger { border-color: var(--color-destructive); }
+.sync-item--warning { border-color: var(--color-warning); }
+.sync-item__what { margin-bottom: var(--space-1); }
+.sync-item__why { margin-bottom: var(--space-2); color: var(--color-muted); }
+
+/* ---------- printing dialog and print log ---------- */
+.dialog--wide { width: min(640px, calc(100% - var(--space-8))); }
+.print-form__test { margin-bottom: var(--space-3); align-items: center; }
+.print-form__test .muted { margin: 0; }
+.print-form__checks { flex-direction: column; align-items: flex-start; }
+.print-log { padding-top: 0; }
+.print-log__list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.print-log__item { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-hi); }
+.print-log__main { display: grid; flex: 1 1 200px; min-width: 0; }
+.print-log__error { color: var(--color-destructive); font-size: var(--text-sm); overflow-wrap: anywhere; }

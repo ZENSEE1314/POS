@@ -4,6 +4,7 @@ import { get, post } from './session.js';
 import { html, fmtMoney, fmtTime } from './util.js';
 import { formDialog, infoDialog } from './ui.js';
 import { S } from './floor-state.js';
+import { printShiftReportAuto } from './print/hooks.js';
 
 export const loadShift = async () => { S.shift = await get('/api/shifts/current'); };
 
@@ -37,6 +38,7 @@ function closeSummary(r) {
 
 export const closeShiftDialog = (onDone) => {
   let result = null;
+  const shiftBefore = S.shift;
   return formDialog({
     title: t('shift.close'),
     intro: t('shift.closeIntro', { expected: fmtMoney(S.shift.expectedCash) }),
@@ -47,5 +49,6 @@ export const closeShiftDialog = (onDone) => {
     if (!ok) return;
     await onDone();
     infoDialog(t('shift.closed'), closeSummary(result));
+    printShiftReportAuto(shiftBefore, result);
   });
 };

@@ -4,11 +4,13 @@ import { get, post, patch, del, can, app } from './session.js';
 import { html, setHtml, fmtMoney, toYuanInput, productName, byId } from './util.js';
 import { delegate, formDialog, confirmDialog, dataTable, badge, skeleton, notifyError, pressed } from './ui.js';
 import { categoryLabel } from './bill-view.js';
+import { printersSection, printerActions } from './print/admin-section.js';
 
 const TABLE_KINDS = ['bar', 'booth', 'room'];
 const RULE_ROLES = ['sales', 'waiter'];
 const BPS_PER_PERCENT = 100;
-const SECTION_IDS = ['tables', 'products', 'rules', 'staff'];
+const SECTION_IDS = ['tables', 'products', 'rules', 'staff', 'printers'];
+const STATIONS = ['', 'bar', 'kitchen'];
 let active = 'tables';
 
 const activeBadge = (on) => (on ? badge(t('common.active'), 'success', '✓') : badge(t('common.inactive'), 'neutral', '—'));
@@ -34,7 +36,7 @@ export function mountAdmin(root) {
       add: 'admin.addProduct',
       view: (rows) => dataTable({ caption: t('admin.products'), empty: t('common.noData'), rows, cols: [
         { label: t('admin.name'), cell: (x) => html`<strong>${x.name}</strong>${x.name_en && html`<br><span class="muted">${x.name_en}</span>`}` },
-        { label: t('admin.category'), cell: (x) => categoryLabel(x.category) }, { label: t('admin.price'), cell: (x) => fmtMoney(x.price), num: true },
+        { label: t('admin.category'), cell: (x) => categoryLabel(x.category) }, { label: t('admin.station'), cell: (x) => t(`station.${x.station || 'none'}`) }, { label: t('admin.price'), cell: (x) => fmtMoney(x.price), num: true },
         { label: t('admin.stock'), cell: (x) => (x.track_stock ? x.stock : '∞'), num: true }, { label: t('common.status'), cell: (x) => activeBadge(x.active) },
         { label: t('common.actions'), cell: (x) => html`<div class="row">${btn('edit', x.id, t('common.edit'))}${x.track_stock && btn('stock', x.id, t('admin.adjustStock'))}</div>` }] }),
       dialog: (x) => productDialog(x),
@@ -66,6 +68,7 @@ export function mountAdmin(root) {
       },
       dialog: null,
     },
+    printers: printersSection(() => reload()),
   };
 
   const reload = async () => {
@@ -107,6 +110,7 @@ export function mountAdmin(root) {
       { name: 'name', label: t('admin.name'), required: true, value: x?.name },
       { name: 'nameEn', label: t('admin.nameEn'), value: x?.name_en },
       { name: 'category', label: t('admin.category'), value: x?.category, hint: t('admin.categoryHint') },
+      { name: 'station', label: t('admin.station'), type: 'select', value: x?.station ?? '', hint: t('admin.stationHint'), options: options(STATIONS, (s) => t(`station.${s || 'none'}`)) },
       { name: 'price', label: t('admin.price'), type: 'money', required: true, value: x ? toYuanInput(x.price) : '' },
       ...(x ? [] : [{ name: 'stock', label: t('admin.stock'), type: 'int', min: 0, value: 0 }]),
       { name: 'trackStock', label: t('admin.trackStock'), type: 'checkbox', value: x?.track_stock ?? true },
@@ -191,6 +195,7 @@ export function mountAdmin(root) {
       },
       toggleStaff: staffToggle,
       resetPin,
+      ...printerActions({ rowOf, reload }),
     },
   });
 }

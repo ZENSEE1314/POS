@@ -20,8 +20,11 @@ import {
   adjustStock, closeShift, collectReceivable, createProduct, createRule, createTable, currentShift, dailyReport, deleteRule,
   listReceivables, listRules, listShifts, listStaff, openShift, searchMembers, updateProduct, updateStaff, updateTable,
 } from './admin.ts';
+import { createPrinter, deletePrinter, listPrinters, updatePrinter } from './printers.ts';
 import { createCompany, listCompanies, recentOps, setCompanyActive } from './platform.ts';
 import { logEvent, Metrics, RateLimiter, selfHeal } from './ops.ts';
+import { buildAssetManifest } from './static-assets.ts';
+import { syncOps } from './sync.ts';
 import { cleanPhone, normalizePhone } from './phone.ts';
 
 const MAX_BODY_BYTES = 256 * 1024;
@@ -29,7 +32,7 @@ const MAX_TOPUP_FEN = 1_000_000_000;
 const PUBLIC_DIR = join(import.meta.dirname, '..', 'public');
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
-  '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json',
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webmanifest': 'application/manifest+json',
 };
 const LOGIN_ATTEMPTS = 10;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
@@ -39,7 +42,7 @@ const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'no-referrer',
-  'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'",
+  'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:*; frame-ancestors 'none'",
 };
 
 type Handler = (ctx: { db: Db; actor: Actor; token: string; params: string[]; body: any; query: URLSearchParams; ip: string }) => unknown | Promise<unknown>;
@@ -193,6 +196,18 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
     return { ok: true };
   });
 
+  // ---- printers (routing only: the local bridge owns the real addresses) ----
+  route('GET', '/api/printers', true, ({ db, actor }) => listPrinters(db, actor));
+  route('POST', '/api/printers', true, async ({ db, actor, body }) => ({ printerId: await createPrinter(db, actor, body) }));
+  route('PATCH', '/api/printers/:id', true, async ({ db, actor, params, body }) => {
+    await updatePrinter(db, actor, num(params[0]), body);
+    return { ok: true };
+  });
+  route('DELETE', '/api/printers/:id', true, async ({ db, actor, params }) => {
+    await deletePrinter(db, actor, num(params[0]));
+    return { ok: true };
+  });
+
   // ---- bills ----
   route('POST', '/api/bills', true, async ({ db, actor, body }) => ({ billId: await openTable(db, actor, body) }));
   route('GET', '/api/bills/:id', true, ({ db, actor, params }) => getBill(db, actor, num(params[0])));
@@ -213,6 +228,7 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
     if (!['cash', 'member', 'credit'].includes(body.method)) throw new DomainError('method must be cash, member or credit', 422);
     return payInstant(db, actor, num(params[0]), body.method, body.amount === undefined ? undefined : num(body.amount));
   });
+  route('POST', '/api/sync', true, ({ db, actor, body }) => syncOps(db, actor, body));
   route('POST', '/api/bills/:id/pay-online', true, ({ db, actor, params, body }) =>
     startOnlinePayment(db, actor, provider(String(body.method)), baseUrl, num(params[0]), body.amount === undefined ? undefined : num(body.amount)));
   route('POST', '/api/bills/:id/redeem', true, async ({ db, actor, params, body }) => {
@@ -331,7 +347,11 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
     const rel = normalize(pathname === '/' ? '/index.html' : pathname).replace(/^([/\\])+/, '');
     const file = join(PUBLIC_DIR, rel);
     if (!file.startsWith(PUBLIC_DIR) || !existsSync(file) || !statSync(file).isFile()) throw new DomainError('not found', 404);
-    send(res, 200, readFileSync(file), MIME[extname(file)] ?? 'application/octet-stream', { 'Cache-Control': 'no-cache' });
+    // The service worker carries the asset list and a content version, so any changed file changes sw.js and triggers an update.
+    const body = rel === 'sw.js'
+      ? readFileSync(file, 'utf8').replace('/*BUILD*/ null', JSON.stringify(buildAssetManifest(PUBLIC_DIR)))
+      : readFileSync(file);
+    send(res, 200, body, MIME[extname(file)] ?? 'application/octet-stream', { 'Cache-Control': 'no-cache' });
   };
 
   const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {

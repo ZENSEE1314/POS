@@ -45,7 +45,7 @@ const en = {
   'floor.rep': 'Sales rep (commission owner)', 'floor.chooseRep': 'Choose a rep', 'floor.repId': 'Sales rep staff ID',
   'floor.repIdHint': 'Your role cannot list staff, so enter the rep\'s staff ID.',
   'floor.phone': 'Phone', 'floor.phoneHint': 'Optional. Links the bill to a member wallet.', 'floor.open': 'Open table', 'floor.cannotOpen': 'Your role cannot open tables.',
-  'floor.billMeta': 'Bill #{id} · opened {time} · rep {rep}', 'floor.billOpen': 'Open', 'floor.billSettled': 'Settled',
+  'floor.billMeta': 'Bill #{id} · opened {time} · rep {rep}', 'floor.offlineBillMeta': 'Offline bill (syncs when online) · opened {time} · rep {rep}', 'floor.billOpen': 'Open', 'floor.billSettled': 'Settled',
   'floor.transfer': 'Transfer table', 'floor.toTable': 'Move to table', 'floor.noFreeTables': 'No free tables to move to.',
   'floor.setDiscount': 'Discount', 'floor.discountAmount': 'Discount amount (¥)',
   'floor.items': 'Items', 'floor.noLines': 'No items yet. Add some below.', 'floor.giftTag': 'Gift', 'floor.voidTag': 'Void',
@@ -123,6 +123,35 @@ const en = {
   'hq.copyHint': 'Copies active products and commission rules into the selected stores.', 'hq.pickStores': 'Pick at least one store.',
   'hq.copied': 'Copied {products} products to {stores} store(s).', 'hq.usernameHint': '2 to 32 letters, digits, dot, dash or underscore.',
   'hq.storeHint': 'Ignored for finance and owner, who see every store.', 'hq.staffCreated': 'Created {name}.',
+
+  'print.header': 'Printing', 'print.title': 'Printing', 'print.receipt': 'Print receipt', 'print.slip': 'Print slip',
+  'print.intro': 'Receipts and tickets print through a small bridge program on a PC in the venue, so they keep printing when the internet is down. These settings apply to this device only.',
+  'print.bridgeUrl': 'Bridge address', 'print.token': 'Bridge token',
+  'print.tokenHint': 'Copy it from the bridge config file on the venue PC. Leave it empty to print through the browser only.',
+  'print.test': 'Test connection', 'print.testing': 'Checking…', 'print.bridgeOk': 'Bridge v{version} is reachable. Printers: {names}',
+  'print.paper': 'Paper width', 'print.paperHint': 'Used for browser printing. Thermal printers use the width set in Admin.',
+  'print.lang': 'Receipt language', 'print.lang.both': 'English + 中文', 'print.lang.zh': '中文', 'print.lang.en': 'English',
+  'print.footer': 'Receipt footer text', 'print.autoTitle': 'Automatic printing',
+  'print.autoReceipt': 'Print the receipt when a bill is paid', 'print.autoTickets': 'Print kitchen and bar tickets when items are added',
+  'print.autoStash': 'Print a slip after storing wine', 'print.autoShift': 'Print the shift report when a shift is closed',
+  'print.fallback': 'Open the browser print dialog when the bridge cannot be reached',
+  'print.badUrl': 'The bridge address must look like http://127.0.0.1:9101 (this computer only).', 'print.saved': 'Printing settings saved.',
+  'print.log': 'Recent print jobs', 'print.logEmpty': 'No print jobs yet on this device.', 'print.reprint': 'Reprint',
+  'print.status.ok': 'Printed', 'print.status.failed': 'Failed', 'print.status.fallback': 'Browser', 'print.status.pending': 'Sending',
+  'print.sent': 'Sent to {name}.', 'print.failed': 'Could not print to {name}: {error}. It is saved in the print log.',
+  'print.noPrinter': 'No {kind} printer is set up for this store. Add one in Admin.',
+  'print.kind.receipt': 'Receipt', 'print.kind.bar': 'Bar', 'print.kind.kitchen': 'Kitchen', 'print.kind.label': 'Label / stash',
+  'print.fallbackOpened': 'Bridge unavailable: opened the browser print dialog instead.',
+  'print.needSettings': 'Set the bridge address and token on this device first (header, Printing).',
+  'print.noModel': 'This job is too old to reprint.', 'print.browser': 'Browser',
+  'print.err.bridge': 'Cannot reach the print bridge. Is it running on this computer?', 'print.err.token': 'The bridge rejected the token. Check it in Printing settings.',
+  'admin.printers': 'Printers', 'admin.addPrinter': 'Add printer', 'admin.bridgeName': 'Bridge printer name', 'admin.copies': 'Copies',
+  'admin.printerHint': 'Pick what this printer is for. Its network address stays in the bridge config on the venue PC, never here.',
+  'admin.bridgeNameHint': 'Exactly the name in the bridge config file (not an IP address).',
+  'admin.bridgeNameBad': 'Letters, digits, space, dot, dash or underscore only, up to 64 characters.',
+  'admin.testPrint': 'Test print', 'admin.deletePrinterAsk': 'Delete printer {name}?',
+  'admin.station': 'Station', 'admin.stationHint': 'Where item tickets print when this product is ordered.',
+  'station.none': 'None', 'station.bar': 'Bar', 'station.kitchen': 'Kitchen',
 };
 
 const zh = {
@@ -168,7 +197,7 @@ const zh = {
   'floor.rep': '营销（提成归属）', 'floor.chooseRep': '请选择营销', 'floor.repId': '营销员工编号',
   'floor.repIdHint': '当前角色无法查看员工列表，请直接输入营销的员工编号。',
   'floor.phone': '手机号', 'floor.phoneHint': '选填，用于关联会员钱包。', 'floor.open': '开台', 'floor.cannotOpen': '当前角色无权开台。',
-  'floor.billMeta': '账单 #{id} · 开台 {time} · 营销 {rep}', 'floor.billOpen': '进行中', 'floor.billSettled': '已结账',
+  'floor.billMeta': '账单 #{id} · 开台 {time} · 营销 {rep}', 'floor.offlineBillMeta': '离线账单（联网后同步） · 开台 {time} · 营销 {rep}', 'floor.billOpen': '进行中', 'floor.billSettled': '已结账',
   'floor.transfer': '转台', 'floor.toTable': '转到台位', 'floor.noFreeTables': '没有可转入的空闲台位。',
   'floor.setDiscount': '折扣', 'floor.discountAmount': '优惠金额（¥）',
   'floor.items': '消费明细', 'floor.noLines': '还没有点单，请在下方添加。', 'floor.giftTag': '赠送', 'floor.voidTag': '已作废',
@@ -246,9 +275,44 @@ const zh = {
   'hq.copyHint': '把启用的商品和提成规则复制到所选门店。', 'hq.pickStores': '请至少选择一家门店。',
   'hq.copied': '已复制 {products} 件商品到 {stores} 家门店。', 'hq.usernameHint': '2 至 32 位字母、数字、点、横线或下划线。',
   'hq.storeHint': '财务和店主可查看所有门店，此项对其无效。', 'hq.staffCreated': '已创建 {name}。',
+
+  'print.header': '打印', 'print.title': '打印设置', 'print.receipt': '打印小票', 'print.slip': '打印凭条',
+  'print.intro': '小票和单据通过店内电脑上的打印桥接程序出单，网络中断时也能继续打印。以下设置仅对本设备生效。',
+  'print.bridgeUrl': '桥接程序地址', 'print.token': '桥接口令',
+  'print.tokenHint': '从店内电脑的桥接配置文件中复制。留空则只使用浏览器打印。',
+  'print.test': '测试连接', 'print.testing': '检查中…', 'print.bridgeOk': '桥接程序 v{version} 已连接。打印机：{names}',
+  'print.paper': '纸宽', 'print.paperHint': '用于浏览器打印。热敏打印机使用后台设置的纸宽。',
+  'print.lang': '小票语言', 'print.lang.both': '中英双语', 'print.lang.zh': '中文', 'print.lang.en': 'English',
+  'print.footer': '小票页脚文字', 'print.autoTitle': '自动打印',
+  'print.autoReceipt': '结账后自动打印小票', 'print.autoTickets': '加单时自动打印厨房/吧台单',
+  'print.autoStash': '寄存酒水后自动打印凭条', 'print.autoShift': '关班时自动打印班次报表',
+  'print.fallback': '无法连接桥接程序时，打开浏览器打印窗口',
+  'print.badUrl': '桥接程序地址须形如 http://127.0.0.1:9101（仅限本机）。', 'print.saved': '打印设置已保存。',
+  'print.log': '最近的打印任务', 'print.logEmpty': '本设备暂无打印记录。', 'print.reprint': '重印',
+  'print.status.ok': '已打印', 'print.status.failed': '失败', 'print.status.fallback': '浏览器', 'print.status.pending': '发送中',
+  'print.sent': '已发送到 {name}。', 'print.failed': '无法打印到 {name}：{error}。已保存在打印记录中，可重印。',
+  'print.noPrinter': '本店尚未设置{kind}打印机，请在后台添加。',
+  'print.kind.receipt': '小票', 'print.kind.bar': '吧台', 'print.kind.kitchen': '厨房', 'print.kind.label': '标签/寄存',
+  'print.fallbackOpened': '桥接程序不可用，已改用浏览器打印。',
+  'print.needSettings': '请先在本设备的“打印”设置中填写桥接地址和口令。',
+  'print.noModel': '该任务已无法重印。', 'print.browser': '浏览器',
+  'print.err.bridge': '无法连接打印桥接程序，请确认它已在本机运行。', 'print.err.token': '桥接程序拒绝了口令，请在打印设置中检查。',
+  'admin.printers': '打印机', 'admin.addPrinter': '添加打印机', 'admin.bridgeName': '桥接打印机名称', 'admin.copies': '份数',
+  'admin.printerHint': '选择这台打印机的用途。网络地址只保存在店内电脑的桥接配置中，不会放在这里。',
+  'admin.bridgeNameHint': '须与桥接配置文件中的名称完全一致（不是 IP 地址）。',
+  'admin.bridgeNameBad': '仅限字母、数字、空格、点、横线、下划线，最长 64 位。',
+  'admin.testPrint': '测试打印', 'admin.deletePrinterAsk': '删除打印机 {name}？',
+  'admin.station': '出单站', 'admin.stationHint': '点此商品时在哪里出单。',
+  'station.none': '不出单', 'station.bar': '吧台', 'station.kitchen': '厨房',
 };
 
 const DICT = { en, zh };
+
+/** Lets a feature module bring its own strings: addStrings({ en: {...}, zh: {...} }). */
+export function addStrings(extra) {
+  Object.assign(en, extra.en);
+  Object.assign(zh, extra.zh);
+}
 
 const ERRORS_ZH = {
   'invalid credentials': '公司代码、用户名或 PIN 码不正确。',

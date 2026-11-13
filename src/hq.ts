@@ -67,9 +67,9 @@ export async function copyCatalog(db: Db, actor: Actor, fromStoreId: number, toS
       for (const p of products) {
         // price/category sync; stock is local to each store and starts at 0
         await t.run(
-          `INSERT INTO products (store_id, name, name_en, category, price, stock, track_stock) VALUES (?,?,?,?,?,0,?)
-           ON CONFLICT (store_id, name) DO UPDATE SET name_en = EXCLUDED.name_en, category = EXCLUDED.category, price = EXCLUDED.price, track_stock = EXCLUDED.track_stock, active = TRUE`,
-          [to, p.name, p.name_en, p.category, p.price, p.track_stock]);
+          `INSERT INTO products (store_id, name, name_en, category, price, stock, track_stock, station) VALUES (?,?,?,?,?,0,?,?)
+           ON CONFLICT (store_id, name) DO UPDATE SET name_en = EXCLUDED.name_en, category = EXCLUDED.category, price = EXCLUDED.price, track_stock = EXCLUDED.track_stock, station = EXCLUDED.station, active = TRUE`,
+          [to, p.name, p.name_en, p.category, p.price, p.track_stock, p.station]);
       }
       // Rules reference products by id, which differ per store, so only store/category-level rules are copied.
       await t.run('DELETE FROM commission_rules WHERE store_id = ?', [to]);

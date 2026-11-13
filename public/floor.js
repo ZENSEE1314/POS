@@ -8,6 +8,7 @@ import { billHtml, productTiles } from './bill-view.js';
 import { createBillActions } from './bill-actions.js';
 import { repField } from './reps.js';
 import { shiftHtml, loadShift, openShiftDialog, closeShiftDialog } from './shift.js';
+import { SYNCED_EVENT, realBillId } from './offline/index.js';
 
 const BOARD_REFRESH_MS = 10000;
 const WIDE_QUERY = '(min-width: 1024px)';
@@ -109,7 +110,8 @@ export function mountFloor(root) {
   async function init() {
     const loads = [get('/api/products'), loadBoard()];
     loads.push(get('/api/reps').then((s) => { S.staff = s; }));
-    if (can('bill.settle')) loads.push(loadShift());
+    // The shift widget is nice to have; the floor must still open when it cannot be loaded (offline and never cached).
+    if (can('bill.settle')) loads.push(loadShift().catch(() => {}));
     const [products] = await Promise.all(loads);
     S.products = products;
     renderShift();
@@ -138,5 +140,19 @@ export function mountFloor(root) {
 
   init().catch(notifyError);
   const timer = setInterval(() => { if (!document.hidden) loadBoard().catch(() => {}); }, BOARD_REFRESH_MS);
-  return () => { clearInterval(timer); billActions.stopPolling(); };
+
+  // Offline operations just reached the server: a bill opened offline now has a real id, and totals/tables may have changed.
+  const onSynced = async () => {
+    try {
+      if (S.billId !== null && S.billId < 0) {
+        S.billId = (await realBillId(S.billId)) ?? null;
+        S.bill = null;
+      }
+      await loadBoard();
+      if (S.billId) await loadBill();
+      renderBill();
+    } catch { /* the next refresh will retry */ }
+  };
+  window.addEventListener(SYNCED_EVENT, onSynced);
+  return () => { clearInterval(timer); billActions.stopPolling(); window.removeEventListener(SYNCED_EVENT, onSynced); };
 }

@@ -1,0 +1,10 @@
+{
+  "token": "REPLACE-WITH-OUTPUT-OF: node bridge/print-bridge.ts --gen-token",
+  "allowedOrigins": ["https://your-nightpos.example.com", "http://localhost:3500"],
+  "port": 9101,
+  "printers": [
+    { "name": "Receipt", "type": "tcp", "host": "192.168.1.50", "port": 9100 },
+    { "name": "Bar", "type": "tcp", "host": "192.168.1.51" },
+    { "name": "Kitchen", "type": "share", "path": "\\\\localhost\\EPSON_TM" }
+  ]
+}

@@ -18,7 +18,7 @@ Roles: `host`, `waiter`, `cashier`, `manager`, `finance`, `owner`. `owner` and `
 
 ## Floor (current store)
 - `GET /api/tables[?all=1]` -> rows with `bill_id` when occupied. `POST /api/tables {name, zone?, kind: bar|booth|room, capacity?, minSpend?, tableFee?}` and `PATCH /api/tables/:id` (manager, owner)
-- `GET /api/products[?all=1]`. `POST /api/products {name, nameEn?, category?, price, stock?, trackStock?}`, `PATCH /api/products/:id`, `POST /api/products/:id/stock {delta, reason}` (manager, owner)
+- `GET /api/products[?all=1]`. `POST /api/products {name, nameEn?, category?, price, stock?, trackStock?, station?}`, `PATCH /api/products/:id`, `POST /api/products/:id/stock {delta, reason}` (manager, owner)
 - `GET/POST /api/commission-rules {role: sales|waiter, category?, productId?, bps, fixed?}`, `DELETE /api/commission-rules/:id` (write: manager, owner)
 
 ## Bills
@@ -30,6 +30,14 @@ Roles: `host`, `waiter`, `cashier`, `manager`, `finance`, `owner`. `owner` and `
 - `POST /api/bills/:id/pay {method: cash|member|credit, amount?}` (cashier, manager, owner). Amount defaults to what is due; capped at due. Settles when fully paid.
 - `POST /api/bills/:id/pay-online {method: wechat|alipay, amount?}` -> `{paymentId, outTradeNo, qrContent, amount}` (422 if the method is not configured). Completion arrives by provider webhook.
 - `POST /api/bills/:id/redeem {code}` Douyin voucher as payment.
+
+## Printers (current store; routing only)
+- `GET /api/printers` -> `[{id, name, kind: receipt|bar|kitchen|label, bridgeName, paperMm: 58|80, copies: 1..5, enabled, lang: both|zh|en}]` (any signed-in staff)
+- `POST /api/printers {name, kind, bridgeName, paperMm?, copies?, enabled?, lang?}` -> `{printerId}` · `PATCH /api/printers/:id` (any subset) · `DELETE /api/printers/:id` (manager, owner)
+- `bridgeName` is the name from the print bridge's own config (letters, digits, space . _ -, max 64), never an address. Names are unique per store (case-insensitive), max 20 printers per store.
+  Another store's or company's printer id is `404`; invalid values are `422`, a duplicate name `409`.
+- Products carry `station`: `''` (prints on no ticket), `bar` or `kitchen`; set it on `POST/PATCH /api/products`; `POST /api/hq/catalog/copy` copies it.
+- The bridge itself (`bridge/print-bridge.ts`, 127.0.0.1:9101) is documented in `bridge/README.md`.
 
 ## Bookings
 `GET /api/bookings` · `POST /api/bookings {phone, name?, partySize?, eta, tableId?, repId?}` · `POST /api/bookings/:id/confirm {tableId, repId}` · `POST /api/bookings/:id/cancel {noShow?}`
@@ -50,6 +58,13 @@ Webhook `POST /webhooks/douyin` (HMAC `x-douyin-signature`), `POST /webhooks/wec
 
 ## Platform operator (header `x-admin-key: $PLATFORM_ADMIN_KEY`, disabled if unset)
 `GET/POST /platform/companies` · `GET /platform/ops?level=&limit=` (warn/error events) · `GET /platform/metrics` · `POST /platform/selfheal` (run invariant checks + safe repairs)
+
+## Offline sync
+`POST /api/sync {ops:[{opId, type, ref?, ts?, payload}]}` -> `{results:[{opId, status, message?, code?, billId?, settled?, paid?, priceDiffFen?, replayed?}]}`. Any signed-in role; each op is checked with the caller's own permissions, in the caller's current store.
+- Ops run strictly in order, each in its own transaction, through the normal domain functions. One failure never aborts the batch. Max 200 ops per batch (422), body max 256 KB (413); any malformed op (bad uuid, non-integer id/qty/amount, unknown field or type) rejects the whole batch with 422 before anything runs.
+- Types: `bill.open {tableId, repId, phone?}` with `ref` = client bill ref (uuid or negative temp id as a string); `bill.addLine {billRef, productId, qty}` (no gifts); `bill.pay {billRef, method: cash|credit, amount, expectedDue?}`. `billRef` is a client ref from an earlier `bill.open` (mapped in `sync_refs`, per store) or a real bill id of this store.
+- `opId` is a uuid, idempotent per store (`sync_ops`): a replay, even concurrent, returns the stored result with `replayed:true` and changes nothing. Only successful ops are stored, so a failed op can be retried under the same id.
+- `status`: `ok`; `conflict` (server state moved on: table occupied, bill already settled, product retired, rep inactive); `error` (permission 403, wrong store, invalid value); `skipped` (its bill was never created, e.g. the bill.open failed). `priceDiffFen` = server due before the payment minus `expectedDue` (the due the cashier saw); the payment applies `min(amount, due)`.
 
 ## Self-healing (runs every minute and on demand)
 Expires stale stash and unpaid online payments (>15 min); frees tables flagged occupied with no open bill; marks tables with an open bill occupied; settles fully-paid bills that never settled. Alerts (not auto-fixed): settled bills that are underpaid, negative stock.

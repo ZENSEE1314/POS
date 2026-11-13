@@ -3,6 +3,7 @@ import { t, tOr } from './i18n.js';
 import { get, post, can, app } from './session.js';
 import { html, setHtml, fmtDate, fmtBottles, productName, DAY } from './util.js';
 import { delegate, formDialog, dataTable, badge, emptyState, notifyError, toast } from './ui.js';
+import { printStashSlip } from './print/hooks.js';
 
 export function mountStash(root) {
   const state = { q: '', results: null, products: [], tables: [], stores: [] };
@@ -17,6 +18,7 @@ export function mountStash(root) {
   function actions(s) {
     return html`<div class="row">
       ${can('stash.write') && html`<button type="button" class="btn btn--small btn--primary" data-action="retrieve" data-id="${s.id}">${t('stash.retrieve')}</button>`}
+      <button type="button" class="btn btn--small btn--ghost" data-action="printStash" data-id="${s.id}">${t('print.slip')}</button>
       ${can('admin.write') && html`<button type="button" class="btn btn--small btn--ghost" data-action="transfer" data-id="${s.id}">${t('stash.transfer')}</button>`}
     </div>`;
   }
@@ -71,6 +73,8 @@ export function mountStash(root) {
       state.q = v.phone;
       render();
       await search(v.phone);
+      const stored = state.results?.find((s) => s.code === r.code);
+      if (stored) printStashSlip(stored, state.products, true);
     },
   });
 
@@ -109,7 +113,7 @@ export function mountStash(root) {
   }).catch(notifyError);
 
   delegate(root, {
-    click: { store, retrieve, transfer },
+    click: { store, retrieve, transfer, printStash: (el) => printStashSlip(find(el), state.products, false) },
     submit: { search: (form) => search(new FormData(form).get('q').trim()) },
   });
 }

@@ -4,6 +4,7 @@ import { app, can } from './session.js';
 import { html, fmtMoney, fmtDateTime, productName, byId, raw } from './util.js';
 import { emptyState, skeleton, badge, pressed } from './ui.js';
 import { qrSvg } from './qr.js';
+import { syncState } from './offline/index.js';
 
 const ONLINE_METHODS = ['wechat', 'alipay'];
 const INSTANT_METHODS = ['cash', 'member', 'credit'];
@@ -109,7 +110,8 @@ function pendingHtml(pending) {
 
 function payPanel(S, tot) {
   if (!can('bill.settle')) return html`<p class="muted bill__note">${t('floor.cannotSettle')}</p>`;
-  const online = ONLINE_METHODS.filter((m) => app.config.payments?.[m]);
+  // QR payments need the provider: hide them while the till is offline instead of failing on tap.
+  const online = syncState().online ? ONLINE_METHODS.filter((m) => app.config.payments?.[m]) : [];
   return html`<section class="bill__section" aria-labelledby="pay-title">
     <h3 id="pay-title" class="section-title">${t('floor.takePayment')}</h3>
     ${pendingHtml(S.pending)}
@@ -134,13 +136,14 @@ export function billHtml(S) {
   return html`<header class="bill__head">
       <button type="button" class="btn btn--small btn--ghost bill__back" data-action="backToBoard">↑ ${t('floor.tables')}</button>
       <div><h2 class="bill__title">${table?.name ?? `#${bill.table_id}`}</h2>
-        <p class="muted">${t('floor.billMeta', { id: bill.id, time: fmtDateTime(bill.opened_at), rep: rep?.name ?? `#${bill.rep_id}` })}</p></div>
+        <p class="muted">${t(bill.id < 0 ? 'floor.offlineBillMeta' : 'floor.billMeta', { id: bill.id, time: fmtDateTime(bill.opened_at), rep: rep?.name ?? `#${bill.rep_id}` })}</p></div>
       ${open ? badge(t('floor.billOpen'), 'warning', '●') : badge(t('floor.billSettled'), 'success', '✓')}
     </header>
-    ${open && html`<div class="row bill__tools">
-      <button type="button" class="btn btn--small btn--ghost" data-action="transfer">${t('floor.transfer')}</button>
-      ${can('bill.discount') && html`<button type="button" class="btn btn--small btn--ghost" data-action="discount">${t('floor.setDiscount')}</button>`}
-    </div>`}
+    <div class="row bill__tools">
+      ${open && html`<button type="button" class="btn btn--small btn--ghost" data-action="transfer">${t('floor.transfer')}</button>`}
+      ${open && can('bill.discount') && html`<button type="button" class="btn btn--small btn--ghost" data-action="discount">${t('floor.setDiscount')}</button>`}
+      <button type="button" class="btn btn--small btn--ghost" data-action="printReceipt">${t('print.receipt')}</button>
+    </div>
     <section class="bill__section" aria-labelledby="lines-title">
       <h3 id="lines-title" class="section-title">${t('floor.items')}</h3>
       ${lines.length ? html`<ul class="lines">${lines.map((l) => lineHtml(l, products, open))}</ul>` : emptyState(t('floor.noLines'))}

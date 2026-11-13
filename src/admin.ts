@@ -2,6 +2,7 @@ import type { Db } from './db.ts';
 import { audit, DomainError } from './db.ts';
 import type { Actor, Role } from './auth.ts';
 import { hashPin, isTenantWide, require_, whoOf } from './auth.ts';
+import { validStation } from './printers.ts';
 
 const MIN_PIN_LENGTH = 4;
 const TABLE_KINDS = ['bar', 'booth', 'room'];
@@ -69,8 +70,8 @@ export async function createProduct(db: Db, actor: Actor, b: any): Promise<numbe
   require_(actor, 'admin.write');
   const name = text(b.name, 'name');
   if (await db.one('SELECT 1 AS x FROM products WHERE store_id = ? AND name = ?', [actor.storeId, name])) throw new DomainError('product name already used', 409);
-  const id = await db.insert('INSERT INTO products (store_id, name, name_en, category, price, stock, track_stock) VALUES (?,?,?,?,?,?,?)',
-    [actor.storeId, name, b.nameEn ? String(b.nameEn) : null, String(b.category ?? ''), int(b.price, 'price'), int(b.stock ?? 0, 'stock'), b.trackStock !== false]);
+  const id = await db.insert('INSERT INTO products (store_id, name, name_en, category, price, stock, track_stock, station) VALUES (?,?,?,?,?,?,?,?)',
+    [actor.storeId, name, b.nameEn ? String(b.nameEn) : null, String(b.category ?? ''), int(b.price, 'price'), int(b.stock ?? 0, 'stock'), b.trackStock !== false, validStation(b.station ?? '')]);
   await audit(db, whoOf(actor), 'product.create', 'product', id, b);
   return id;
 }
@@ -81,13 +82,14 @@ export async function updateProduct(db: Db, actor: Actor, id: number, b: any): P
   if (!p) throw new DomainError('product not found', 404);
   const name = b.name !== undefined ? text(b.name, 'name') : p.name;
   if (name !== p.name && (await db.one('SELECT 1 AS x FROM products WHERE store_id = ? AND name = ? AND id <> ?', [actor.storeId, name, id]))) throw new DomainError('product name already used', 409);
-  await db.run('UPDATE products SET name = ?, name_en = ?, category = ?, price = ?, track_stock = ?, active = ? WHERE id = ?', [
+  await db.run('UPDATE products SET name = ?, name_en = ?, category = ?, price = ?, track_stock = ?, active = ?, station = ? WHERE id = ?', [
     name,
     b.nameEn !== undefined ? (b.nameEn ? String(b.nameEn) : null) : p.name_en,
     b.category ?? p.category,
     b.price !== undefined ? int(b.price, 'price') : p.price,
     b.trackStock !== undefined ? flag(b.trackStock, 'trackStock') : p.track_stock,
-    b.active !== undefined ? flag(b.active, 'active') : p.active, id]);
+    b.active !== undefined ? flag(b.active, 'active') : p.active,
+    b.station !== undefined ? validStation(b.station) : p.station, id]);
   await audit(db, whoOf(actor), 'product.update', 'product', id, b);
 }
 

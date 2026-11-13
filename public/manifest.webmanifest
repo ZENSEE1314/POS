@@ -1,0 +1,13 @@
+{
+  "name": "NightPOS 夜场收银",
+  "short_name": "NightPOS",
+  "description": "Point of sale for bars and clubs, works offline.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#120e24",
+  "theme_color": "#120e24",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

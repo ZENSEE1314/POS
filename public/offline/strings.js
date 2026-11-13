@@ -1,0 +1,45 @@
+// Offline-mode strings, registered into the shared dictionary so i18n.js needs no per-feature edits.
+import { addStrings } from '../i18n.js';
+
+addStrings({
+  en: {
+    'offline.needsConnection': 'Needs connection',
+    'offline.updateReady': 'A new version is ready. Reload the page to use it.',
+    'offline.logoutPending': '{n} offline operation(s) have not synced yet. If you sign out now they are lost. Sign out anyway?',
+
+    'sync.online': 'Online', 'sync.offline': 'Offline', 'sync.offlinePending': 'Offline: {n} pending',
+    'sync.pending': '{n} pending', 'sync.signIn': 'Sign in to sync {n}', 'sync.syncing': 'Syncing…',
+    'sync.attention': 'Needs attention: {n}', 'sync.openPanel': 'Connection and sync status',
+    'sync.title': 'Offline sync', 'sync.needsAttention': 'Needs attention', 'sync.waiting': 'Waiting to sync ({n})',
+    'sync.allClear': 'Everything is synced.', 'sync.syncNow': 'Sync now', 'sync.retry': 'Retry', 'sync.dismiss': 'Dismiss',
+    'sync.offlineHelp': 'No connection. You can keep opening tables, adding items and taking cash or on-account payments. Everything is saved on this device and sent when the connection returns.',
+    'sync.foreign': '{n} operation(s) from another user or store are waiting on this device and sync when that user signs in.',
+    'sync.cashNote': 'The guest may already have paid. Check the cash drawer and record this payment manually.',
+    'sync.done': 'Synced {n} offline operation(s).', 'sync.doneAttention': 'Synced, but {n} operation(s) need attention.',
+    'sync.what.open': 'Opening table {table}', 'sync.what.line': 'Adding {qty} × {product} to {table}',
+    'sync.what.pay': 'Payment of {amount} ({method}) on {table}',
+    'sync.why.price': 'Recorded, but: {reason}',
+    'sync.why.skipped': 'Not recorded, because the table could not be opened on the server.',
+    'sync.why.unknown': 'The server refused this operation.',
+  },
+  zh: {
+    'offline.needsConnection': '需要联网',
+    'offline.updateReady': '新版本已就绪，请刷新页面。',
+    'offline.logoutPending': '有 {n} 项离线操作尚未同步，现在退出会丢失它们。仍要退出吗？',
+
+    'sync.online': '在线', 'sync.offline': '离线', 'sync.offlinePending': '离线：{n} 项待同步',
+    'sync.pending': '{n} 项待同步', 'sync.signIn': '登录后同步 {n} 项', 'sync.syncing': '同步中…',
+    'sync.attention': '需处理：{n}', 'sync.openPanel': '连接与同步状态',
+    'sync.title': '离线同步', 'sync.needsAttention': '需要处理', 'sync.waiting': '等待同步（{n}）',
+    'sync.allClear': '全部已同步。', 'sync.syncNow': '立即同步', 'sync.retry': '重试', 'sync.dismiss': '忽略',
+    'sync.offlineHelp': '当前无网络。仍可开台、点单、收现金或挂账，所有记录保存在本设备，网络恢复后自动上传。',
+    'sync.foreign': '有 {n} 项操作属于其他用户或门店，将在对方登录后同步。',
+    'sync.cashNote': '客人可能已付款，请核对钱箱并手动补录这笔收款。',
+    'sync.done': '已同步 {n} 项离线操作。', 'sync.doneAttention': '已同步，但有 {n} 项操作需要处理。',
+    'sync.what.open': '开台 {table}', 'sync.what.line': '{table} 加单：{product} × {qty}',
+    'sync.what.pay': '{table} 收款 {amount}（{method}）',
+    'sync.why.price': '已记录，但需注意：{reason}',
+    'sync.why.skipped': '未记录，因为服务器上无法开台。',
+    'sync.why.unknown': '服务器拒绝了此操作。',
+  },
+});

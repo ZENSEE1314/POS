@@ -4,6 +4,7 @@ import { post } from './session.js';
 import { parseFen, fmtMoney } from './util.js';
 import { formDialog, confirmDialog, toast } from './ui.js';
 import { S } from './floor-state.js';
+import { printReceiptAuto, printReceiptManual, queueTicketLine } from './print/hooks.js';
 
 const POLL_MS = 2000;
 const MAX_QTY = 99;
@@ -27,6 +28,7 @@ export function createBillActions(ctx) {
     toast(t('floor.onlinePaid', { method: tOr(`pay.${pending.method}`, pending.method), amount: fmtMoney(pending.amount) }), 'success');
     await ctx.reloadBoard();
     ctx.renderBill();
+    printReceiptAuto();
   }
 
   const startPolling = () => {
@@ -35,7 +37,10 @@ export function createBillActions(ctx) {
   };
 
   const afterChange = async (full = false) => {
+    const wasOpen = S.bill?.bill.status === 'open';
     await ctx.reloadBill();
+    // Any action that settles the bill (payment, voucher, a void or discount that lands on the paid amount) prints the receipt.
+    if (wasOpen) printReceiptAuto();
     if (full) await ctx.reloadBoard();
     ctx.renderBill();
   };
@@ -52,6 +57,7 @@ export function createBillActions(ctx) {
       Object.assign(body, { gift: true, reason });
     }
     await post(billPath('/lines'), body);
+    queueTicketLine({ billId: S.billId, product: S.products.find((p) => p.id === productId), qty, gift });
     S.qty = 1;
     S.gift = false;
     await afterChange();
@@ -76,6 +82,7 @@ export function createBillActions(ctx) {
         addItem: (el) => addLine(Number(el.dataset.id), clampQty(S.qty), S.gift),
         plusLine: (el) => addLine(Number(el.dataset.id), 1, false),
         setCategory: (el) => { S.category = el.dataset.cat; ctx.renderBill(); },
+        printReceipt: printReceiptManual,
         backToBoard: () => document.getElementById('board').scrollIntoView({ behavior: 'smooth' }),
         voidLine: (el) => formDialog({
           title: t('floor.void'), fields: [reasonField(t('floor.reason'))], submit: 'floor.void', danger: true,

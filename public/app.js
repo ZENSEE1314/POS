@@ -2,7 +2,7 @@
 import { t, getLang, setLang, loadLang, LANGS, errorText } from './i18n.js';
 import { app, can, api, get, post, loadToken, saveToken, setUnauthorizedHandler, readStore, writeStore } from './session.js';
 import { html, setHtml } from './util.js';
-import { delegate, formDialog, toast, notifyError, pressed } from './ui.js';
+import { delegate, formDialog, confirmDialog, toast, notifyError, pressed } from './ui.js';
 import { startSky } from './starfield.js';
 import { setNavigator } from './nav.js';
 import { resetFloorState } from './floor-state.js';
@@ -13,6 +13,9 @@ import { mountMembers } from './members.js';
 import { mountReports } from './reports.js';
 import { mountAdmin } from './admin.js';
 import { mountHq } from './hq.js';
+import { initOffline, syncPillHtml, mountSyncPill, openSyncPanel, syncState, syncNow, forgetEverything, offlineSignedIn } from './offline/index.js';
+import { openPrintDialog } from './print/dialog.js';
+import { clearPrintData } from './print/log.js';
 
 const COMPANY_KEY = 'nightpos.company';
 const DEFAULT_VIEW = 'floor';
@@ -29,6 +32,7 @@ const TABS = [
 
 const appEl = document.getElementById('app');
 let unmountView = null;
+let unmountSyncPill = null;
 let stores = [];
 
 const visibleTabs = () => TABS.filter((tab) => !tab.perm || can(tab.perm));
@@ -114,7 +118,8 @@ const openSignup = () => formDialog({
 async function loadSession() {
   const me = await get('/api/me');
   Object.assign(app, { actor: me.actor, store: me.store, company: me.company });
-  stores = can('hq.read') ? await get('/api/hq/stores') : [];
+  // Head-office data is online-only; an owner who reloads while offline still gets the floor, just without the store switcher.
+  stores = can('hq.read') ? await get('/api/hq/stores').catch((e) => { if (e.status === 0) return []; throw e; }) : [];
 }
 
 function headerHtml() {
@@ -129,8 +134,10 @@ function headerHtml() {
         <div><p class="chrome__name">${t('app.name')}</p><p class="chrome__company">${company.name}</p></div></div>
       <div class="chrome__tools">
         ${storeControl}
+        ${syncPillHtml()}
         <p class="chrome__user"><strong>${actor.name}</strong> <span class="badge badge--neutral">${t(`role.${actor.role}`)}</span></p>
         ${langToggle()}
+        <button type="button" class="btn btn--small btn--ghost" data-action="printSettings">${t('print.header')}</button>
         <button type="button" class="btn btn--small btn--ghost" data-action="logout">${t('shell.logout')}</button>
       </div>
     </header>
@@ -156,6 +163,8 @@ function renderShell() {
   unmountView?.();
   unmountView = null;
   setHtml(appEl, headerHtml());
+  unmountSyncPill?.();
+  unmountSyncPill = mountSyncPill();
   mountCurrentView();
 }
 
@@ -163,6 +172,7 @@ async function enterApp() {
   resetFloorState();
   await loadSession();
   renderShell();
+  void offlineSignedIn();
 }
 
 function showLogin(prefill) {
@@ -171,8 +181,15 @@ function showLogin(prefill) {
 }
 
 async function logout() {
-  try { await api('POST', '/api/logout', {}); } catch { /* token may already be invalid */ }
+  // Signing out wipes this device's offline data, so unsynced sales must not vanish silently.
+  await syncNow();
+  const s = syncState();
+  const unsynced = s.pending + s.attention + s.foreign;
+  if (unsynced > 0 && !await confirmDialog({ title: t('shell.logout'), message: t('offline.logoutPending', { n: unsynced }), submit: 'shell.logout', danger: true })) return;
+  try { await api('POST', '/api/logout', {}); } catch { /* token may already be invalid, or we are offline */ }
+  await forgetEverything();
   saveToken(null);
+  clearPrintData();
   resetFloorState();
   showLogin();
 }
@@ -183,6 +200,7 @@ async function switchStore(el) {
   resetFloorState();
   await loadSession();
   renderShell();
+  void offlineSignedIn();
 }
 
 function changeLang(el) {
@@ -195,6 +213,7 @@ function changeLang(el) {
 
 async function boot() {
   loadLang();
+  initOffline();
   document.title = t('app.title');
   startSky(document.getElementById('sky'));
   setNavigator((view) => { location.hash = view; });
@@ -206,7 +225,7 @@ async function boot() {
   });
   window.addEventListener('hashchange', () => { if (app.actor) mountCurrentView(); });
   delegate(document.body, {
-    click: { lang: changeLang, logout, signup: openSignup },
+    click: { lang: changeLang, logout, signup: openSignup, syncPanel: openSyncPanel, printSettings: openPrintDialog },
     change: { switchStore },
     submit: { login: submitLogin },
   });
@@ -214,7 +233,14 @@ async function boot() {
   try { Object.assign(app.config, await get('/api/config')); } catch (e) { notifyError(e); }
   loadToken();
   if (!app.token) { showLogin(); return; }
-  try { await enterApp(); } catch { saveToken(null); showLogin(); }
+  try {
+    await enterApp();
+  } catch (e) {
+    // Offline with nothing cached for this session: keep the token so a reload with a connection signs straight back in.
+    if (e.status !== 0) saveToken(null);
+    showLogin();
+    if (e.status === 0) notifyError(e);
+  }
 }
 
 boot();

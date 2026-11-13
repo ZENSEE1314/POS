@@ -35,7 +35,7 @@ export function writeStore(storage, key, value) {
 export const loadToken = () => { app.token = readStore(sessionStorage, TOKEN_KEY); };
 export const saveToken = (token) => { app.token = token; writeStore(sessionStorage, TOKEN_KEY, token); };
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(message, status) {
     super(message);
     this.status = status;
@@ -45,15 +45,29 @@ class ApiError extends Error {
 let onUnauthorized = () => {};
 export const setUnauthorizedHandler = (fn) => { onUnauthorized = fn; };
 
-export async function api(method, path, body) {
+// Offline layer (public/offline/): installed at boot by initOffline(). Without it the API client is a plain fetch wrapper.
+let offline = null;
+export const setOfflineHooks = (hooks) => { offline = hooks; };
+
+// Calls the offline emulator answers get a short timeout so a dead link fails over quickly; everything else may be slow.
+const FAILOVER_READ_MS = 4000;
+const FAILOVER_WRITE_MS = 10000;
+const DEFAULT_TIMEOUT_MS = 30000;
+
+/** The real HTTP call. Rejects with status 0 when the server cannot be reached (network down, timeout). */
+export async function networkRequest(method, path, body, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const headers = {};
   if (app.token) headers.Authorization = `Bearer ${app.token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res;
   try {
-    res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    res = await fetch(path, { method, headers, signal: controller.signal, body: body === undefined ? undefined : JSON.stringify(body) });
   } catch {
     throw new ApiError('network error', 0);
+  } finally {
+    clearTimeout(timer);
   }
   let data = null;
   try { data = await res.json(); } catch { /* empty body */ }
@@ -62,6 +76,25 @@ export async function api(method, path, body) {
     throw new ApiError(data?.error ?? res.statusText, res.status);
   }
   return data;
+}
+
+export async function api(method, path, body) {
+  if (offline) {
+    // Bills with queued offline work stay local even when the connection is back, so the queue is applied in order.
+    if ((await offline.owns(method, path)) || (offline.isOffline() && offline.emulated(method, path))) return offline.emulate(method, path, body);
+  }
+  const failsOver = offline?.emulated(method, path);
+  let data;
+  try {
+    data = await networkRequest(method, path, body, failsOver ? (method === 'GET' ? FAILOVER_READ_MS : FAILOVER_WRITE_MS) : DEFAULT_TIMEOUT_MS);
+  } catch (e) {
+    if (e.status !== 0 || !offline) throw e;
+    offline.networkDown();
+    return offline.emulate(method, path, body); // throws "needs connection" for anything it cannot serve
+  }
+  if (!offline) return data;
+  offline.networkUp();
+  return offline.after(method, path, data);
 }
 
 export const get = (path) => api('GET', path);
