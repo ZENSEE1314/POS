@@ -1,5 +1,5 @@
 import { createDecipheriv, createSign, createVerify, randomBytes } from 'node:crypto';
-import type { ChargeRequest, ChargeResult, NotifyResult, PayProvider } from './types.ts';
+import type { ChargeRequest, ChargeResult, GuestCharge, GuestChargeRequest, NotifyResult, PayProvider } from './types.ts';
 
 export interface WechatConfig {
   appId: string;
@@ -12,6 +12,7 @@ export interface WechatConfig {
 }
 
 const NATIVE_PATH = '/v3/pay/transactions/native';
+const JSAPI_PATH = '/v3/pay/transactions/jsapi';
 const AUTH_SCHEME = 'WECHATPAY2-SHA256-RSA2048';
 
 /** WeChat Pay APIv3 Native (scan-to-pay) payments. */
@@ -30,7 +31,11 @@ export class WechatProvider implements PayProvider {
     return `${AUTH_SCHEME} mchid="${this.cfg.mchId}",nonce_str="${nonce}",signature="${signature}",timestamp="${timestamp}",serial_no="${this.cfg.serialNo}"`;
   }
 
-  async createCharge(req: ChargeRequest): Promise<ChargeResult> {
+  get appId(): string {
+    return this.cfg.appId;
+  }
+
+  private async order(path: string, req: ChargeRequest, extra: Record<string, unknown> = {}): Promise<any> {
     const body = JSON.stringify({
       appid: this.cfg.appId,
       mchid: this.cfg.mchId,
@@ -38,19 +43,41 @@ export class WechatProvider implements PayProvider {
       out_trade_no: req.outTradeNo,
       notify_url: req.notifyUrl,
       amount: { total: req.amountFen, currency: 'CNY' },
+      ...extra,
     });
-    const res = await fetch((this.cfg.baseUrl ?? 'https://api.mch.weixin.qq.com') + NATIVE_PATH, {
+    const res = await fetch((this.cfg.baseUrl ?? 'https://api.mch.weixin.qq.com') + path, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
-        Authorization: this.buildAuthorization('POST', NATIVE_PATH, body),
+        Authorization: this.buildAuthorization('POST', path, body),
       },
       body,
     });
     const json = (await res.json()) as any;
-    if (!res.ok || !json.code_url) throw new Error(`wechat native order failed: ${json.code ?? res.status} ${json.message ?? ''}`);
+    if (!res.ok) throw new Error(`wechat order failed: ${json.code ?? res.status} ${json.message ?? ''}`);
+    return json;
+  }
+
+  async createCharge(req: ChargeRequest): Promise<ChargeResult> {
+    const json = await this.order(NATIVE_PATH, req);
+    if (!json.code_url) throw new Error('wechat native order returned no code_url');
     return { qrContent: json.code_url };
+  }
+
+  /** Inside WeChat with the payer's openid: JSAPI pay; otherwise a Native QR the guest long-presses or scans. */
+  async createGuestCharge(req: GuestChargeRequest): Promise<GuestCharge> {
+    if (!req.openId) return { kind: 'qr', qrContent: (await this.createCharge(req)).qrContent };
+    const json = await this.order(JSAPI_PATH, req, { payer: { openid: req.openId } });
+    if (!json.prepay_id) throw new Error('wechat jsapi order returned no prepay_id');
+    return { kind: 'jsapi', params: this.jsapiParams(json.prepay_id) };
+  }
+
+  /** Parameters for WeixinJSBridge getBrandWCPayRequest; paySign covers appId, timeStamp, nonceStr and package. */
+  jsapiParams(prepayId: string, timestamp = Math.floor(Date.now() / 1000), nonce = randomBytes(16).toString('hex')): Record<string, string> {
+    const pkg = `prepay_id=${prepayId}`;
+    const paySign = createSign('RSA-SHA256').update(`${this.cfg.appId}\n${timestamp}\n${nonce}\n${pkg}\n`).sign(this.cfg.privateKeyPem, 'base64');
+    return { appId: this.cfg.appId, timeStamp: String(timestamp), nonceStr: nonce, package: pkg, signType: 'RSA', paySign };
   }
 
   parseNotify(headers: Record<string, string | undefined>, rawBody: string): NotifyResult {

@@ -1,0 +1,227 @@
+import type { Db } from '../db.ts';
+import { DomainError } from '../db.ts';
+import type { Actor } from '../auth.ts';
+import { handleNotify } from '../payments.ts';
+import type { Providers } from '../payments/index.ts';
+import type { MockProvider } from '../payments/mock.ts';
+import type { OnlineMethod } from '../payments/types.ts';
+import { logEvent, RateLimiter } from '../ops.ts';
+import { HtmlPage, Redirect } from '../responses.ts';
+import {
+  consumeAuthState, createAuthState, createLoginCode, customerIdFromToken, endSession, exchangeLoginCode, getCustomer, guestPhone, linkPhone,
+  loginWithPhone, newBrowserNonce, renameCustomer, requestOtp, safeReturnPath, signInWithIdentity,
+} from './accounts.ts';
+import type { IdentityProviders, LoginProvider } from './identity.ts';
+import { LOGIN_PROVIDERS } from './identity.ts';
+import type { SmsSender } from './sms.ts';
+import {
+  accountAt, cancelGuestBooking, cancelGuestOrder, createGuestBooking, guestOrder, markPaymentFailed, menu, paymentStatus, payFromWallet,
+  placeOrder, reserveGuestPayment, tableBill, tableInfo, venueInfo,
+} from './venue.ts';
+import { acceptGuestOrder, listGuestOrders, pendingGuestOrderCount, rejectGuestOrder, renewTableQr } from './staff.ts';
+
+const HOUR_MS = 60 * 60_000;
+const DAY_MS = 24 * HOUR_MS;
+const OTP_PER_IP_PER_HOUR = 10;
+// Per phone, whatever the IP: bounds SMS bombing of one number and code guessing to a few hundred tries a day at most.
+const OTP_PER_PHONE_PER_HOUR = 5;
+const OTP_PER_PHONE_PER_DAY = 10;
+const CODE_TRIES_PER_PHONE_PER_HOUR = 10;
+const CODE_TRIES_PER_PHONE_PER_DAY = 30;
+const PHONE_LOGIN_PER_IP_PER_10MIN = 20;
+/** Platform-wide ceiling on SMS sent, so a pumping attack across many numbers cannot run up the SMS bill. */
+const DEFAULT_SMS_PER_HOUR = 300;
+const AUTH_COOKIE = 'np_gauth';
+const AUTH_COOKIE_MAX_AGE_S = 15 * 60;
+
+interface Ctx { db: Db; actor: Actor; token: string; params: string[]; body: any; query: URLSearchParams; ip: string; cookie: string }
+
+const readCookie = (header: string, name: string): string | undefined =>
+  header.split(';').map((c) => c.trim().split('=')).find(([k]) => k === name)?.[1];
+type RouteFn = (method: string, path: string, auth: boolean, handler: (ctx: Ctx) => unknown) => void;
+
+export interface GuestDeps {
+  db: Db;
+  payProviders: Providers;
+  identities: IdentityProviders;
+  sms?: SmsSender;
+  baseUrl: string;
+  isMock: boolean;
+  num: (v: unknown) => number;
+  smsPerHour?: number;
+  otpPerIpPerHour?: number;
+}
+
+const loginProvider = (identities: IdentityProviders, name: string) => {
+  const p = LOGIN_PROVIDERS.includes(name as LoginProvider) ? identities[name as LoginProvider] : undefined;
+  if (!p) throw new DomainError(`${name} sign-in is not available yet`, 404);
+  return p;
+};
+
+const MOCK_CONSENT_PAGE = (provider: string, state: string) => `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Simulated ${provider} sign-in</title>
+<style>body{font:16px system-ui,sans-serif;background:#120e24;color:#f1e9d2;display:grid;place-items:center;min-height:100vh;margin:0}
+form{background:#1d1838;border:1px solid #f7d77455;border-radius:18px;padding:24px;max-width:340px;width:calc(100% - 32px)}
+h1{font-size:20px;margin:0 0 8px}p{color:#b7aed4;font-size:14px}label{display:block;font-weight:700;margin:16px 0 4px}
+input{width:100%;box-sizing:border-box;min-height:44px;padding:8px 12px;font:inherit;border-radius:12px;border:1px solid #f7d77455;background:#120e24;color:#fff3c4}
+button{margin-top:16px;width:100%;min-height:44px;font:inherit;font-weight:800;border:0;border-radius:12px;background:#f7d774;color:#2a1a00}</style></head>
+<body><form method="get" action="/api/guest/auth/${provider}/callback"><h1>Simulated ${provider} sign-in 模拟登录</h1>
+<p>Development mode: no real ${provider} account is used. The same name always signs in to the same test account.</p>
+<input type="hidden" name="state" value="${state}"><label for="n">Your name 你的名字</label>
+<input id="n" name="code" required maxlength="40" value="Test Guest" autofocus><button type="submit">Allow 同意</button></form></body></html>`;
+
+/** Customer app API (/api/guest/*) plus the staff endpoints that handle what guests send. */
+export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
+  const { payProviders, identities, sms, baseUrl, isMock, num } = deps;
+  const otpIpLimiter = new RateLimiter(deps.otpPerIpPerHour ?? OTP_PER_IP_PER_HOUR, HOUR_MS);
+  const otpPhoneHourly = new RateLimiter(OTP_PER_PHONE_PER_HOUR, HOUR_MS);
+  const otpPhoneDaily = new RateLimiter(OTP_PER_PHONE_PER_DAY, DAY_MS);
+  const smsGlobal = new RateLimiter(deps.smsPerHour ?? DEFAULT_SMS_PER_HOUR, HOUR_MS);
+  const codeTriesHourly = new RateLimiter(CODE_TRIES_PER_PHONE_PER_HOUR, HOUR_MS);
+  const codeTriesDaily = new RateLimiter(CODE_TRIES_PER_PHONE_PER_DAY, DAY_MS);
+  const phoneLoginLimiter = new RateLimiter(PHONE_LOGIN_PER_IP_PER_10MIN, 10 * 60_000);
+  const signedIn = (fn: (ctx: Ctx, customerId: number) => unknown) => async (ctx: Ctx) => fn(ctx, await customerIdFromToken(ctx.db, ctx.token));
+  const callbackUrl = (p: string) => `${baseUrl}/api/guest/auth/${p}/callback`;
+  const secureCookie = baseUrl.startsWith('https://') ? '; Secure' : '';
+  const authCookie = (nonce: string) => `${AUTH_COOKIE}=${nonce}; Path=/api/guest; HttpOnly; SameSite=Lax; Max-Age=${AUTH_COOKIE_MAX_AGE_S}${secureCookie}`;
+  /** Every code check counts against the phone, across all IPs; the per-IP limit alone is beaten by rotating addresses. */
+  const allowCodeTry = (ip: string, rawPhone: unknown) => {
+    const key = typeof rawPhone === 'string' ? guestPhone(rawPhone) : '';
+    if (!phoneLoginLimiter.allow(ip) || !codeTriesHourly.allow(key) || !codeTriesDaily.allow(key)) throw new DomainError('too many attempts, try again later', 429);
+  };
+
+  // ---- public ----
+  route('GET', '/api/guest/config', false, () => ({
+    mock: isMock,
+    login: { wechat: Boolean(identities.wechat), alipay: Boolean(identities.alipay), douyin: Boolean(identities.douyin), phone: Boolean(sms) },
+    payments: { wechat: Boolean(payProviders.wechat), alipay: Boolean(payProviders.alipay) },
+  }));
+  route('GET', '/api/guest/venue/:company', false, ({ db, params }) => venueInfo(db, params[0]));
+  route('GET', '/api/guest/venue/:company/:store/menu', false, ({ db, params }) => menu(db, params[0], params[1]));
+  route('GET', '/api/guest/table/:token', false, ({ db, params }) => tableInfo(db, params[0]));
+
+  // ---- sign-in with WeChat / Alipay / Douyin: start -> provider -> callback -> one-time code in the URL fragment ----
+  route('GET', '/api/guest/auth/:provider/start', false, async ({ db, params, query }) => {
+    const p = loginProvider(identities, params[0]);
+    const nonce = newBrowserNonce();
+    const state = await createAuthState(db, p.name, safeReturnPath(query.get('return')), nonce);
+    return new Redirect(p.authorizeUrl(state, callbackUrl(p.name)), { 'Set-Cookie': authCookie(nonce) });
+  });
+  if (isMock) {
+    route('GET', '/api/guest/auth/:provider/mock-consent', false, ({ params, query }) => {
+      const p = loginProvider(identities, params[0]);
+      const state = query.get('state') ?? '';
+      if (!/^[0-9a-f]{48}$/.test(state)) throw new DomainError('bad state', 400);
+      return new HtmlPage(MOCK_CONSENT_PAGE(p.name, state));
+    });
+  }
+  route('GET', '/api/guest/auth/:provider/callback', false, async ({ db, params, query, ip, cookie }) => {
+    let returnTo = '/g/';
+    try {
+      const p = loginProvider(identities, params[0]);
+      const nonce = readCookie(cookie, AUTH_COOKIE);
+      returnTo = await consumeAuthState(db, query.get('state') ?? '', p.name, nonce);
+      const code = query.get(p.codeParam);
+      // The guest pressed "deny" on the provider's screen.
+      if (!code) return new Redirect(`${returnTo}#loginError=cancelled`);
+      const profile = await p.exchange(code);
+      const customerId = await signInWithIdentity(db, p.name, profile);
+      return new Redirect(`${returnTo}#login=${await createLoginCode(db, customerId, nonce!)}`);
+    } catch (e) {
+      if (!(e instanceof DomainError)) await logEvent(db, 'warn', 'guest.login_failed', `${params[0]} sign-in failed: ${(e as Error).message}`, { ip });
+      return new Redirect(`${returnTo}#loginError=${encodeURIComponent(e instanceof DomainError ? e.message : 'provider')}`);
+    }
+  });
+  route('POST', '/api/guest/session', false, ({ db, body, cookie }) => exchangeLoginCode(db, body.code, readCookie(cookie, AUTH_COOKIE)));
+
+  // ---- phone + SMS code ----
+  route('POST', '/api/guest/otp', false, async ({ db, body, ip }) => {
+    if (!sms) throw new DomainError('phone sign-in is not available yet', 404);
+    const phone = guestPhone(body.phone);
+    if (!otpIpLimiter.allow(ip) || !otpPhoneHourly.allow(phone) || !otpPhoneDaily.allow(phone)) throw new DomainError('too many codes requested, try again later', 429);
+    if (!smsGlobal.allow('all')) {
+      await logEvent(db, 'error', 'guest.sms_ceiling', 'hourly SMS ceiling reached: possible SMS pumping', { ip });
+      throw new DomainError('codes are temporarily unavailable, try again later', 429);
+    }
+    return requestOtp(db, sms, phone);
+  });
+  route('POST', '/api/guest/login/phone', false, ({ db, body, ip }) => {
+    if (!sms) throw new DomainError('phone sign-in is not available yet', 404);
+    allowCodeTry(ip, body.phone);
+    return loginWithPhone(db, body.phone, body.code);
+  });
+
+  // ---- signed-in guest ----
+  route('GET', '/api/guest/me', false, signedIn(({ db }, id) => getCustomer(db, id)));
+  route('PATCH', '/api/guest/me', false, signedIn(({ db, body }, id) => renameCustomer(db, id, body.name)));
+  route('POST', '/api/guest/logout', false, async ({ db, token }) => {
+    await endSession(db, token);
+    return { ok: true };
+  });
+  route('POST', '/api/guest/me/phone', false, signedIn(({ db, body, ip, token }, id) => {
+    allowCodeTry(ip, body.phone);
+    return linkPhone(db, id, token, body.phone, body.code);
+  }));
+  route('GET', '/api/guest/account/:company', false, signedIn(({ db, params }, id) => accountAt(db, id, params[0])));
+
+  route('POST', '/api/guest/orders', false, signedIn(({ db, body }, id) => placeOrder(db, id, body)));
+  route('GET', '/api/guest/orders/:id', false, signedIn(({ db, params }, id) => guestOrder(db, id, num(params[0]))));
+  route('POST', '/api/guest/orders/:id/cancel', false, signedIn(async ({ db, params }, id) => {
+    await cancelGuestOrder(db, id, num(params[0]));
+    return { ok: true };
+  }));
+
+  route('GET', '/api/guest/table/:token/bill', false, signedIn(({ db, params }) => tableBill(db, params[0])));
+  route('POST', '/api/guest/table/:token/pay', false, signedIn(async ({ db, params, body }, customerId) => {
+    const amount = body.amount === undefined || body.amount === null ? undefined : num(body.amount);
+    if (body.method === 'member') return { kind: 'done', ...(await payFromWallet(db, customerId, params[0], amount)) };
+    if (body.method !== 'wechat' && body.method !== 'alipay') throw new DomainError('method must be wechat, alipay or member', 422);
+    const provider = payProviders[body.method as OnlineMethod];
+    if (!provider) throw new DomainError(`${body.method} payments are not available yet`, 422);
+    const r = await reserveGuestPayment(db, customerId, params[0], provider.method, amount);
+    // JSAPI needs the payer's openid for the very appid WeChat Pay is bound to.
+    const payAppId = (provider as { appId?: string }).appId;
+    const openId = provider.method === 'wechat' && payAppId
+      ? (await db.one("SELECT subject FROM customer_identities WHERE customer_id = ? AND provider = 'wechat' AND app_id = ?", [customerId, payAppId]))?.subject
+      : undefined;
+    try {
+      const charge = await provider.createGuestCharge({
+        outTradeNo: r.outTradeNo, amountFen: r.pay, subject: `${r.storeName} #${r.billId}`, notifyUrl: `${baseUrl}/webhooks/${provider.method}`,
+        returnUrl: `${baseUrl}${safeReturnPath(body.returnPath)}?paid=${r.outTradeNo}`, openId,
+      });
+      return { ...charge, outTradeNo: r.outTradeNo, amount: r.pay };
+    } catch (e) {
+      await markPaymentFailed(db, r.paymentId);
+      throw new DomainError(`payment provider error: ${(e as Error).message}`, 502);
+    }
+  }));
+  route('GET', '/api/guest/payments/:outTradeNo', false, signedIn(({ db, params }, id) => paymentStatus(db, id, params[0])));
+  if (isMock) {
+    // Development: plays the provider's signed callback for the guest's own pending payment.
+    route('POST', '/api/guest/payments/:outTradeNo/mock-pay', false, signedIn(async ({ db, params }, customerId) => {
+      const p = await db.one("SELECT * FROM payments WHERE out_trade_no = ? AND customer_id = ? AND status = 'pending'", [params[0], customerId]);
+      if (!p) throw new DomainError('payment not found', 404);
+      const mock = payProviders[p.method as OnlineMethod] as MockProvider;
+      const raw = JSON.stringify({ eventId: `evt_${Date.now()}_${Math.random()}`, outTradeNo: p.out_trade_no, amountFen: p.amount, status: 'paid' });
+      await handleNotify(db, p.method, mock, { 'x-mock-signature': mock.sign(raw) }, raw);
+      return paymentStatus(db, customerId, params[0]);
+    }));
+  }
+
+  route('POST', '/api/guest/bookings', false, signedIn(({ db, body }, id) => createGuestBooking(db, id, body)));
+  route('POST', '/api/guest/bookings/:id/cancel', false, signedIn(async ({ db, params }, id) => {
+    await cancelGuestBooking(db, id, num(params[0]));
+    return { ok: true };
+  }));
+
+  // ---- staff: handle guest orders, renew table QR codes ----
+  route('GET', '/api/guest-orders', true, ({ db, actor, query }) => listGuestOrders(db, actor, query.get('status') ?? 'pending'));
+  route('GET', '/api/guest-orders/count', true, ({ db, actor }) => pendingGuestOrderCount(db, actor));
+  route('POST', '/api/guest-orders/:id/accept', true, ({ db, actor, params, body }) =>
+    acceptGuestOrder(db, actor, num(params[0]), body.repId === undefined || body.repId === null || body.repId === '' ? undefined : num(body.repId)));
+  route('POST', '/api/guest-orders/:id/reject', true, async ({ db, actor, params, body }) => {
+    await rejectGuestOrder(db, actor, num(params[0]), body.reason);
+    return { ok: true };
+  });
+  route('POST', '/api/tables/:id/qr', true, ({ db, actor, params }) => renewTableQr(db, actor, num(params[0])));
+}

@@ -13,6 +13,7 @@ import { mountMembers } from './members.js';
 import { mountReports } from './reports.js';
 import { mountAdmin } from './admin.js';
 import { mountHq } from './hq.js';
+import { mountGuestOrders, GUEST_ORDERS_CHANGED } from './guest-orders.js';
 import { initOffline, syncPillHtml, mountSyncPill, openSyncPanel, syncState, syncNow, forgetEverything, offlineSignedIn } from './offline/index.js';
 import { openPrintDialog } from './print/dialog.js';
 import { clearPrintData } from './print/log.js';
@@ -22,6 +23,7 @@ const DEFAULT_VIEW = 'floor';
 const SIGNUP_PIN_MIN = 6;
 const TABS = [
   { id: 'floor', mount: mountFloor },
+  { id: 'orders', mount: mountGuestOrders, perm: 'order.add' },
   { id: 'bookings', mount: mountBookings },
   { id: 'stash', mount: mountStash },
   { id: 'members', mount: mountMembers },
@@ -166,6 +168,40 @@ function renderShell() {
   unmountSyncPill?.();
   unmountSyncPill = mountSyncPill();
   mountCurrentView();
+  startOrderBadge();
+}
+
+let stopOrderBadge = null;
+const ORDER_BADGE_MS = 20_000;
+
+/** Count of guest orders waiting, on the "Guest orders" tab, so staff on any view notice new QR orders. */
+function startOrderBadge() {
+  stopOrderBadge?.();
+  stopOrderBadge = null;
+  if (!can('order.add')) return;
+  const tick = async () => {
+    const tab = document.querySelector('.tab[data-tab=orders]');
+    if (!tab || document.visibilityState !== 'visible' || !syncState().online) return;
+    try {
+      const { pending } = await get('/api/guest-orders/count');
+      let count = tab.querySelector('.tab__count');
+      if (!pending) { count?.remove(); return; }
+      if (!count) {
+        count = document.createElement('span');
+        count.className = 'tab__count';
+        tab.append(count);
+      }
+      count.textContent = String(pending);
+      count.setAttribute('aria-label', t('guestOrders.badge', { n: pending }));
+    } catch { /* offline or signed out: the badge keeps its last value */ }
+  };
+  void tick();
+  const timer = setInterval(tick, ORDER_BADGE_MS);
+  window.addEventListener(GUEST_ORDERS_CHANGED, tick);
+  stopOrderBadge = () => {
+    clearInterval(timer);
+    window.removeEventListener(GUEST_ORDERS_CHANGED, tick);
+  };
 }
 
 async function enterApp() {
@@ -176,6 +212,8 @@ async function enterApp() {
 }
 
 function showLogin(prefill) {
+  stopOrderBadge?.();
+  stopOrderBadge = null;
   Object.assign(app, { actor: null, store: null, company: null });
   renderLogin({ company: readStore(localStorage, COMPANY_KEY) ?? '', ...prefill });
 }

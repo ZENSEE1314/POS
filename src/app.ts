@@ -26,6 +26,11 @@ import { logEvent, Metrics, RateLimiter, selfHeal } from './ops.ts';
 import { buildAssetManifest } from './static-assets.ts';
 import { syncOps } from './sync.ts';
 import { cleanPhone, normalizePhone } from './phone.ts';
+import { HtmlPage, Redirect } from './responses.ts';
+import { AlipayProvider } from './payments/alipay.ts';
+import { buildIdentityProviders } from './guest/identity.ts';
+import { buildSms } from './guest/sms.ts';
+import { registerGuestRoutes } from './guest/routes.ts';
 
 const MAX_BODY_BYTES = 256 * 1024;
 const MAX_TOPUP_FEN = 1_000_000_000;
@@ -45,7 +50,7 @@ const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:*; frame-ancestors 'none'",
 };
 
-type Handler = (ctx: { db: Db; actor: Actor; token: string; params: string[]; body: any; query: URLSearchParams; ip: string }) => unknown | Promise<unknown>;
+type Handler = (ctx: { db: Db; actor: Actor; token: string; params: string[]; body: any; query: URLSearchParams; ip: string; cookie: string }) => unknown | Promise<unknown>;
 interface Route { method: string; pattern: RegExp; auth: boolean; key: string; handler: Handler }
 
 async function readRaw(req: IncomingMessage): Promise<string> {
@@ -88,6 +93,8 @@ function databaseInputStatus(e: unknown): { status: number; message: string } | 
   const code = (e as { code?: unknown } | null)?.code;
   if (typeof code !== 'string') return undefined;
   if (code === '23505') return { status: 409, message: 'already exists' };
+  // Deadlock victim / serialization failure: several devices changed the same bill at the same instant; nothing was written.
+  if (code === '40P01' || code === '40001') return { status: 409, message: 'busy, please try again' };
   if (code.startsWith('22') || code.startsWith('23')) return { status: 422, message: 'invalid value' };
   return undefined;
 }
@@ -166,7 +173,7 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
   });
   route('GET', '/api/me', true, async ({ actor, db }) => ({
     actor,
-    store: await db.one('SELECT id, name FROM stores WHERE id = ?', [actor.storeId]),
+    store: await db.one('SELECT id, name, code FROM stores WHERE id = ?', [actor.storeId]),
     company: await db.one('SELECT name, code FROM tenants WHERE id = ?', [actor.tenantId]),
   }));
   route('POST', '/api/switch-store', true, async ({ db, actor, token, body }) => ({ actor: await switchStore(db, token, actor, num(body.storeId)) }));
@@ -330,6 +337,12 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
   route('GET', '/platform/metrics', false, () => metrics.snapshot());
   route('POST', '/platform/selfheal', false, ({ db }) => selfHeal(db));
 
+  registerGuestRoutes(route, {
+    db, payProviders: providers, baseUrl, isMock, num, sms: buildSms(env), smsPerHour: env.GUEST_SMS_PER_HOUR ? Number(env.GUEST_SMS_PER_HOUR) : undefined,
+    otpPerIpPerHour: env.GUEST_OTP_PER_IP_PER_HOUR ? Number(env.GUEST_OTP_PER_IP_PER_HOUR) : undefined,
+    identities: buildIdentityProviders(env, providers.alipay instanceof AlipayProvider ? providers.alipay : undefined),
+  });
+
   if (isMock) {
     route('POST', '/dev/mock-pay', true, async ({ db, actor, body }) => {
       const p = await db.one(
@@ -344,7 +357,9 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
   }
 
   const serveStatic = (res: ServerResponse, pathname: string): void => {
-    const rel = normalize(pathname === '/' ? '/index.html' : pathname).replace(/^([/\\])+/, '');
+    // Customer app: every /g/... address (venue, store, table QR) is the same single page; it routes itself.
+    const isGuestPage = pathname === '/g' || pathname.startsWith('/g/');
+    const rel = isGuestPage ? 'guest/index.html' : normalize(pathname === '/' ? '/index.html' : pathname).replace(/^([/\\])+/, '');
     const file = join(PUBLIC_DIR, rel);
     if (!file.startsWith(PUBLIC_DIR) || !existsSync(file) || !statSync(file).isFile()) throw new DomainError('not found', 404);
     // The service worker carries the asset list and a content version, so any changed file changes sw.js and triggers an update.
@@ -418,7 +433,14 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
           const token = (req.headers.authorization ?? '').replace(/^Bearer /, '');
           const actor = r.auth ? await actorFromToken(db, token || undefined) : (undefined as unknown as Actor);
           if (actor) scope = { tenantId: actor.tenantId, storeId: actor.storeId };
-          return send(res, 200, await r.handler({ db, actor, token, params: match.slice(1).map(decodeParam), body, query: url.searchParams, ip }));
+          const out = await r.handler({ db, actor, token, params: match.slice(1).map(decodeParam), body, query: url.searchParams, ip, cookie: String(req.headers.cookie ?? '') });
+          if (out instanceof Redirect) {
+            status = 302;
+            res.writeHead(302, { Location: out.location, 'Cache-Control': 'no-store', ...SECURITY_HEADERS, ...out.headers });
+            return void res.end();
+          }
+          if (out instanceof HtmlPage) return send(res, 200, out.body, 'text/html; charset=utf-8', { 'Cache-Control': 'no-store' });
+          return send(res, 200, out);
         }
         throw new DomainError('not found', 404);
       }

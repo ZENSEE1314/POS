@@ -5,6 +5,10 @@ import type { Actor } from './auth.ts';
 import { require_, whoOf } from './auth.ts';
 import { settleIfPaid, totals } from './bills.ts';
 import type { OnlineMethod, PayProvider } from './payments/types.ts';
+import { logEvent } from './ops.ts';
+
+/** Matches the self-heal expiry of unpaid online payments. */
+const PENDING_HOLD_MS = 15 * 60 * 1000;
 
 async function lockOpenBill(t: Db, actor: Actor, billId: number): Promise<any> {
   const bill = await t.one('SELECT * FROM bills WHERE id = ? AND store_id = ? FOR UPDATE', [billId, actor.storeId]);
@@ -43,20 +47,45 @@ export async function payInstant(db: Db, actor: Actor, billId: number, method: '
   });
 }
 
+/** Money another guest's phone is still in the middle of paying (unfinished online payments that have not timed out). */
+export async function pendingHeld(t: Db, billId: number): Promise<number> {
+  const r = await t.one("SELECT COALESCE(SUM(amount),0) AS s FROM payments WHERE bill_id = ? AND status = 'pending' AND customer_id IS NOT NULL AND created_at > ?",
+    [billId, Date.now() - PENDING_HOLD_MS]);
+  return r.s;
+}
+
+/** Books a pending online payment for at most what is due on an open bill of this store; the provider call happens outside the transaction. */
+export async function reservePayment(
+  db: Db, storeId: number, billId: number, method: OnlineMethod, amount?: number, customerId: number | null = null,
+): Promise<{ paymentId: number; outTradeNo: string; pay: number }> {
+  return db.tx(async (t) => {
+    const bill = await t.one('SELECT status FROM bills WHERE id = ? AND store_id = ? FOR UPDATE', [billId, storeId]);
+    if (!bill) throw new DomainError('bill not found', 404);
+    if (bill.status !== 'open') throw new DomainError(`bill is ${bill.status}`, 409);
+    let due = (await totals(t, billId)).due;
+    if (customerId !== null) {
+      // A guest retrying replaces their own unfinished payment; other guests' unfinished payments are held back so two
+      // phones at one table cannot both pay the whole bill.
+      await t.run("UPDATE payments SET status = 'expired' WHERE bill_id = ? AND customer_id = ? AND status = 'pending'", [billId, customerId]);
+      due -= await pendingHeld(t, billId);
+      if (due <= 0) throw new DomainError('someone at this table is paying right now; try again in a few minutes', 409);
+    }
+    const pay = Math.min(amount ?? due, due);
+    if (pay <= 0) throw new DomainError('nothing due', 409);
+    const outTradeNo = newOutTradeNo(billId);
+    const paymentId = await t.insert(
+      "INSERT INTO payments (bill_id, method, amount, status, out_trade_no, created_at, customer_id) VALUES (?,?,?,'pending',?,?,?)",
+      [billId, method, pay, outTradeNo, Date.now(), customerId]);
+    return { paymentId, outTradeNo, pay };
+  });
+}
+
 /** Creates a pending online payment and asks the provider for a QR the customer scans. */
 export async function startOnlinePayment(
   db: Db, actor: Actor, provider: PayProvider, publicBaseUrl: string, billId: number, amount?: number,
 ): Promise<{ paymentId: number; outTradeNo: string; qrContent: string; amount: number }> {
   require_(actor, 'bill.settle');
-  const { paymentId, outTradeNo, pay } = await db.tx(async (t) => {
-    await lockOpenBill(t, actor, billId);
-    const due = (await totals(t, billId)).due;
-    const pay = Math.min(amount ?? due, due);
-    if (pay <= 0) throw new DomainError('nothing due', 409);
-    const outTradeNo = newOutTradeNo(billId);
-    const paymentId = await t.insert("INSERT INTO payments (bill_id, method, amount, status, out_trade_no, created_at) VALUES (?,?,?,'pending',?,?)", [billId, provider.method, pay, outTradeNo, Date.now()]);
-    return { paymentId, outTradeNo, pay };
-  });
+  const { paymentId, outTradeNo, pay } = await reservePayment(db, actor.storeId, billId, provider.method, amount);
   try {
     const charge = await provider.createCharge({
       outTradeNo, amountFen: pay, subject: `Bill ${billId}`, notifyUrl: `${publicBaseUrl}/webhooks/${provider.method}`,
@@ -85,9 +114,15 @@ export async function handleNotify(db: Db, providerName: OnlineMethod, provider:
     if (p.status === 'paid') return;
     if (p.amount !== n.amountFen) throw new DomainError(`amount mismatch: expected ${p.amount}, got ${n.amountFen}`, 409);
     await t.run("UPDATE payments SET status = 'paid', provider_ref = ?, paid_at = ? WHERE id = ?", [n.providerRef, Date.now(), p.id]);
-    const bill = await t.one('SELECT b.store_id, s.tenant_id FROM bills b JOIN stores s ON s.id = b.store_id WHERE b.id = ?', [p.bill_id]);
+    const bill = await t.one('SELECT b.store_id, b.status, s.tenant_id FROM bills b JOIN stores s ON s.id = b.store_id WHERE b.id = ?', [p.bill_id]);
     await audit(t, { tenantId: bill.tenant_id, storeId: bill.store_id }, `pay.${providerName}`, 'bill', p.bill_id, { amount: p.amount, ref: n.providerRef });
     await settleIfPaid(t, null, p.bill_id);
+    // The money has moved, so it is recorded; but a bill that was already paid off needs a human to refund the guest.
+    const tot = await totals(t, p.bill_id);
+    if (tot.paid > tot.total) {
+      await logEvent(t, 'error', 'payment.overpaid', `bill ${p.bill_id} received ${tot.paid - tot.total} fen more than its total (late ${providerName} payment ${p.out_trade_no}): refund the guest`,
+        { billId: p.bill_id, paymentId: p.id, over: tot.paid - tot.total, wasSettled: bill.status === 'settled' }, { tenantId: bill.tenant_id, storeId: bill.store_id });
+    }
   });
   return n.ackBody;
 }

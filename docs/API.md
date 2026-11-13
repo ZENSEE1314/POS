@@ -59,6 +59,18 @@ Webhook `POST /webhooks/douyin` (HMAC `x-douyin-signature`), `POST /webhooks/wec
 ## Platform operator (header `x-admin-key: $PLATFORM_ADMIN_KEY`, disabled if unset)
 `GET/POST /platform/companies` · `GET /platform/ops?level=&limit=` (warn/error events) · `GET /platform/metrics` · `POST /platform/selfheal` (run invariant checks + safe repairs)
 
+## Customer app (`/api/guest/*`)
+Guest tokens are separate from staff tokens (`Authorization: Bearer <guest token>`, 30 days). Public routes need no token.
+- Public: `GET /api/guest/config` -> `{mock, login:{wechat,alipay,douyin,phone}, payments:{wechat,alipay}}` · `GET /api/guest/venue/:company` · `GET /api/guest/venue/:company/:store/menu` · `GET /api/guest/table/:qrToken`
+- Provider sign-in: `GET /api/guest/auth/:provider/start?return=/g/...` (302 to the provider) -> provider -> `GET /api/guest/auth/:provider/callback` (302 to `return#login=<one-time code>` or `#loginError=`) -> `POST /api/guest/session {code}` -> `{token, customer}`. State and code are single-use; `return` must be a `/g/` path.
+- Phone: `POST /api/guest/otp {phone}` (mainland mobile; 1 per minute per phone, 10 per hour per IP; `devCode` only in mock mode) · `POST /api/guest/login/phone {phone, code}` · `POST /api/guest/me/phone {phone, code}` (verify/link; merges into the account that already owns the phone). 5 wrong guesses kill a code.
+- Signed in: `GET/PATCH /api/guest/me {name}` · `POST /api/guest/logout` · `GET /api/guest/account/:company` -> `{phoneVerified, wallet:{balance, ledger}|null, stash, bookings, orders}`
+- Orders: `POST /api/guest/orders {qrToken, items:[{productId, qty 1..99}] (1..30), note?}` -> `{orderId}` (409 when an item is retired or short of stock; max 5 pending per guest) · `GET /api/guest/orders/:id` · `POST /api/guest/orders/:id/cancel` (pending only)
+- Bill and pay: `GET /api/guest/table/:qrToken/bill` · `POST /api/guest/table/:qrToken/pay {method: wechat|alipay|member, amount?, returnPath?}` -> `{kind: jsapi|redirect|qr|mock|done, ...}` · `GET /api/guest/payments/:outTradeNo` -> `{status, billSettled}` · mock only: `POST /api/guest/payments/:outTradeNo/mock-pay`
+- Bookings: `POST /api/guest/bookings {company, store, partySize, eta, name?, note?}` (verified phone; 15 min to 60 days ahead; max 3 upcoming per store) · `POST /api/guest/bookings/:id/cancel`
+
+Staff side: `GET /api/guest-orders?status=pending|accepted|rejected|cancelled` · `GET /api/guest-orders/count` · `POST /api/guest-orders/:id/accept {repId?}` (repId required when the table is free) · `POST /api/guest-orders/:id/reject {reason}` (waiter, cashier, manager, owner) · `POST /api/tables/:id/qr` -> `{qrToken}` (manager, owner). Table rows carry `qr_token`.
+
 ## Offline sync
 `POST /api/sync {ops:[{opId, type, ref?, ts?, payload}]}` -> `{results:[{opId, status, message?, code?, billId?, settled?, paid?, priceDiffFen?, replayed?}]}`. Any signed-in role; each op is checked with the caller's own permissions, in the caller's current store.
 - Ops run strictly in order, each in its own transaction, through the normal domain functions. One failure never aborts the batch. Max 200 ops per batch (422), body max 256 KB (413); any malformed op (bad uuid, non-integer id/qty/amount, unknown field or type) rejects the whole batch with 422 before anything runs.

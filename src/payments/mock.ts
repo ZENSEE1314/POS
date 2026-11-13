@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import type { ChargeRequest, ChargeResult, NotifyResult, OnlineMethod, PayProvider } from './types.ts';
+import type { ChargeRequest, ChargeResult, GuestCharge, GuestChargeRequest, NotifyResult, OnlineMethod, PayProvider } from './types.ts';
 
 /** Local simulator: no real money moves. Notify bodies are HMAC-signed so the webhook path is exercised for real. */
 export class MockProvider implements PayProvider {
@@ -13,6 +13,10 @@ export class MockProvider implements PayProvider {
 
   async createCharge(req: ChargeRequest): Promise<ChargeResult> {
     return { qrContent: `mock-${this.method}://pay/${req.outTradeNo}?amount=${req.amountFen}`, providerRef: `mock_${req.outTradeNo}` };
+  }
+
+  async createGuestCharge(_req: GuestChargeRequest): Promise<GuestCharge> {
+    return { kind: 'mock' };
   }
 
   sign(rawBody: string): string {

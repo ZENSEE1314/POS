@@ -1,0 +1,257 @@
+import type { Db } from '../db.ts';
+import { audit, DomainError } from '../db.ts';
+import { settleIfPaid, totals } from '../bills.ts';
+import { pendingHeld, reservePayment } from '../payments.ts';
+import type { OnlineMethod } from '../payments/types.ts';
+
+const MAX_ORDER_LINES = 30;
+const MAX_LINE_QTY = 99;
+const MAX_PENDING_ORDERS = 5;
+const MAX_NOTE = 200;
+const MAX_PARTY = 50;
+const MAX_ACTIVE_BOOKINGS = 3;
+const BOOKING_HORIZON_MS = 60 * 24 * 60 * 60 * 1000;
+const BOOKING_MIN_LEAD_MS = 15 * 60 * 1000;
+const RECENT = 20;
+
+const text = (v: unknown, name: string, max = MAX_NOTE): string => {
+  if (v == null || v === '') return '';
+  if (typeof v !== 'string' || v.length > max) throw new DomainError(`${name}: up to ${max} characters`, 422);
+  return v.trim();
+};
+const int = (v: unknown, name: string, min: number, max: number): number => {
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < min || v > max) throw new DomainError(`${name} must be a whole number from ${min} to ${max}`, 422);
+  return v;
+};
+
+interface StoreRef { tenantId: number; companyName: string; companyCode: string; storeId: number; storeName: string; storeCode: string }
+
+const STORE_SQL = `SELECT t.id AS tenant_id, t.name AS company_name, t.code AS company_code, s.id AS store_id, s.name AS store_name, s.code AS store_code
+  FROM stores s JOIN tenants t ON t.id = s.tenant_id WHERE s.active AND t.active`;
+const toStoreRef = (r: any): StoreRef => ({
+  tenantId: r.tenant_id, companyName: r.company_name, companyCode: r.company_code, storeId: r.store_id, storeName: r.store_name, storeCode: r.store_code,
+});
+
+async function storeByCode(db: Db, company: string, storeCode: string): Promise<StoreRef> {
+  const r = await db.one(`${STORE_SQL} AND lower(t.code) = lower(?) AND lower(s.code) = lower(?)`, [company, storeCode]);
+  if (!r) throw new DomainError('venue not found', 404);
+  return toStoreRef(r);
+}
+
+async function tenantByCode(db: Db, company: string): Promise<{ id: number; name: string; code: string }> {
+  const t = await db.one('SELECT id, name, code FROM tenants WHERE lower(code) = lower(?) AND active', [company]);
+  if (!t) throw new DomainError('venue not found', 404);
+  return t;
+}
+
+/** A table is reached only through its QR token, so nobody can order onto a table they cannot see. */
+async function tableByToken(db: Db, qrToken: string, lock = false): Promise<{ table: any; store: StoreRef }> {
+  if (!/^[0-9a-f]{32}$/.test(qrToken)) throw new DomainError('table not found', 404);
+  const r = await db.one(
+    `SELECT d.*, x.* FROM dining_tables d JOIN (${STORE_SQL}) x ON x.store_id = d.store_id WHERE d.qr_token = ? AND d.active${lock ? ' FOR UPDATE OF d' : ''}`, [qrToken]);
+  if (!r) throw new DomainError('table not found', 404);
+  return { table: { id: r.id, name: r.name, kind: r.kind, capacity: r.capacity, minSpend: r.min_spend, tableFee: r.table_fee }, store: toStoreRef(r) };
+}
+
+const guestProduct = (p: any) => ({
+  id: p.id, name: p.name, nameEn: p.name_en ?? '', category: p.category, price: p.price, soldOut: Boolean(p.track_stock && p.stock <= 0),
+});
+
+export async function venueInfo(db: Db, company: string) {
+  const t = await tenantByCode(db, company);
+  const stores = await db.all('SELECT name, code FROM stores WHERE tenant_id = ? AND active ORDER BY id', [t.id]);
+  return { company: { name: t.name, code: t.code }, stores };
+}
+
+export async function menu(db: Db, company: string, storeCode: string) {
+  const s = await storeByCode(db, company, storeCode);
+  const products = await db.all('SELECT * FROM products WHERE store_id = ? AND active ORDER BY category, id', [s.storeId]);
+  return { company: { name: s.companyName, code: s.companyCode }, store: { name: s.storeName, code: s.storeCode }, products: products.map(guestProduct) };
+}
+
+export async function tableInfo(db: Db, qrToken: string) {
+  const { table, store } = await tableByToken(db, qrToken);
+  return { company: { name: store.companyName, code: store.companyCode }, store: { name: store.storeName, code: store.storeCode }, table };
+}
+
+// ---------- table ordering ----------
+
+export async function placeOrder(db: Db, customerId: number, input: { qrToken?: unknown; items?: unknown; note?: unknown }) {
+  const items = Array.isArray(input.items) ? input.items : [];
+  if (!items.length || items.length > MAX_ORDER_LINES) throw new DomainError(`an order needs 1 to ${MAX_ORDER_LINES} items`, 422);
+  const wanted = new Map<number, number>();
+  for (const it of items) {
+    const productId = int((it as any)?.productId, 'productId', 1, Number.MAX_SAFE_INTEGER);
+    wanted.set(productId, (wanted.get(productId) ?? 0) + int((it as any)?.qty, 'qty', 1, MAX_LINE_QTY));
+  }
+  const note = text(input.note, 'note');
+  return db.tx(async (t) => {
+    const { table, store } = await tableByToken(t, String(input.qrToken ?? ''));
+    const pending = await t.one("SELECT COUNT(*) AS n FROM guest_orders WHERE customer_id = ? AND status = 'pending'", [customerId]);
+    if (pending.n >= MAX_PENDING_ORDERS) throw new DomainError('you have orders waiting for staff; please wait for them first', 429);
+    const products = await t.all('SELECT * FROM products WHERE store_id = ? AND active AND id = ANY(?)', [store.storeId, [...wanted.keys()]]);
+    if (products.length !== wanted.size) throw new DomainError('an item is no longer on the menu', 409);
+    for (const p of products) {
+      if (p.track_stock && p.stock < wanted.get(p.id)!) throw new DomainError(`${p.name}: not enough left`, 409);
+    }
+    const orderId = await t.insert('INSERT INTO guest_orders (store_id, table_id, customer_id, note, created_at) VALUES (?,?,?,?,?)', [store.storeId, table.id, customerId, note, Date.now()]);
+    for (const p of products) {
+      await t.run('INSERT INTO guest_order_items (order_id, product_id, name, qty, unit_price) VALUES (?,?,?,?,?)', [orderId, p.id, p.name, wanted.get(p.id), p.price]);
+    }
+    await audit(t, { tenantId: store.tenantId, storeId: store.storeId }, 'guest.order', 'guest_order', orderId, { customerId, tableId: table.id });
+    return { orderId };
+  });
+}
+
+async function orderItems(db: Db, orderIds: number[]) {
+  if (!orderIds.length) return new Map<number, any[]>();
+  const rows = await db.all(
+    `SELECT i.order_id, i.product_id AS "productId", i.name, p.name_en AS "nameEn", i.qty, i.unit_price AS "unitPrice"
+     FROM guest_order_items i JOIN products p ON p.id = i.product_id WHERE i.order_id = ANY(?) ORDER BY i.id`, [orderIds]);
+  const out = new Map<number, any[]>();
+  for (const { order_id, ...r } of rows) out.set(order_id, [...(out.get(order_id) ?? []), r]);
+  return out;
+}
+
+const orderView = (o: any, items: any[]) => ({
+  id: o.id, status: o.status, note: o.note, rejectReason: o.reject_reason, createdAt: o.created_at, decidedAt: o.decided_at,
+  tableName: o.table_name, storeName: o.store_name, items, total: items.reduce((s, i) => s + i.qty * i.unitPrice, 0),
+});
+
+const ORDER_SQL = `SELECT o.*, d.name AS table_name, s.name AS store_name FROM guest_orders o
+  JOIN dining_tables d ON d.id = o.table_id JOIN stores s ON s.id = o.store_id`;
+
+export async function guestOrder(db: Db, customerId: number, orderId: number) {
+  const o = await db.one(`${ORDER_SQL} WHERE o.id = ? AND o.customer_id = ?`, [orderId, customerId]);
+  if (!o) throw new DomainError('order not found', 404);
+  return orderView(o, (await orderItems(db, [o.id])).get(o.id) ?? []);
+}
+
+export async function cancelGuestOrder(db: Db, customerId: number, orderId: number): Promise<void> {
+  const n = await db.run("UPDATE guest_orders SET status = 'cancelled', decided_at = ? WHERE id = ? AND customer_id = ? AND status = 'pending'", [Date.now(), orderId, customerId]);
+  if (!n) throw new DomainError('this order can no longer be cancelled', 409);
+}
+
+// ---------- the table's bill ----------
+
+async function openBillAt(db: Db, tableId: number, lock = false): Promise<number | null> {
+  const b = await db.one(`SELECT id FROM bills WHERE table_id = ? AND status = 'open'${lock ? ' FOR UPDATE' : ''}`, [tableId]);
+  return b?.id ?? null;
+}
+
+/** What the guests at a table see: the items and totals of its open bill (never who else paid or staff details). */
+export async function tableBill(db: Db, qrToken: string) {
+  const { table, store } = await tableByToken(db, qrToken);
+  const billId = await openBillAt(db, table.id);
+  if (!billId) return { table, store: { name: store.storeName }, bill: null };
+  const lines = await db.all(
+    `SELECT l.id, l.name, p.name_en AS "nameEn", l.qty, l.unit_price AS "unitPrice", l.kind FROM bill_lines l JOIN products p ON p.id = l.product_id
+     WHERE l.bill_id = ? AND l.status = 'active' ORDER BY l.id`, [billId]);
+  const paid = await db.all("SELECT method, amount, paid_at AS \"paidAt\" FROM payments WHERE bill_id = ? AND status = 'paid' ORDER BY id", [billId]);
+  return { table, store: { name: store.storeName }, bill: { id: billId, lines, payments: paid, totals: await totals(db, billId) } };
+}
+
+/** Books a pending WeChat/Alipay payment on the table's open bill, owned by this guest. */
+export async function reserveGuestPayment(db: Db, customerId: number, qrToken: string, method: OnlineMethod, amount?: number) {
+  const { table, store } = await tableByToken(db, qrToken);
+  const billId = await openBillAt(db, table.id);
+  if (!billId) throw new DomainError('this table has no open bill yet', 409);
+  if (amount !== undefined) int(amount, 'amount', 1, Number.MAX_SAFE_INTEGER);
+  const r = await reservePayment(db, store.storeId, billId, method, amount, customerId);
+  return { ...r, billId, storeName: store.storeName, companyCode: store.companyCode };
+}
+
+export async function markPaymentFailed(db: Db, paymentId: number): Promise<void> {
+  await db.run("UPDATE payments SET status = 'failed' WHERE id = ? AND status = 'pending'", [paymentId]);
+}
+
+export async function paymentStatus(db: Db, customerId: number, outTradeNo: string) {
+  const p = await db.one('SELECT method, amount, status, bill_id FROM payments WHERE out_trade_no = ? AND customer_id = ?', [outTradeNo, customerId]);
+  if (!p) throw new DomainError('payment not found', 404);
+  const bill = await db.one('SELECT status FROM bills WHERE id = ?', [p.bill_id]);
+  return { method: p.method, amount: p.amount, status: p.status, billSettled: bill?.status === 'settled' };
+}
+
+/** Pays from the guest's own member wallet at this company, found through their verified phone. */
+export async function payFromWallet(db: Db, customerId: number, qrToken: string, amount?: number) {
+  const phone = (await db.one('SELECT phone FROM customers WHERE id = ?', [customerId]))?.phone;
+  if (!phone) throw new DomainError('verify your phone number to use your member wallet', 403);
+  if (amount !== undefined) int(amount, 'amount', 1, Number.MAX_SAFE_INTEGER);
+  return db.tx(async (t) => {
+    const { table, store } = await tableByToken(t, qrToken);
+    const billId = await openBillAt(t, table.id, true);
+    if (!billId) throw new DomainError('this table has no open bill yet', 409);
+    // Switching from an unfinished WeChat/Alipay payment to the wallet replaces it; other guests' unfinished payments are held back.
+    await t.run("UPDATE payments SET status = 'expired' WHERE bill_id = ? AND customer_id = ? AND status = 'pending'", [billId, customerId]);
+    const due = (await totals(t, billId)).due - await pendingHeld(t, billId);
+    if (due <= 0) throw new DomainError('someone at this table is paying right now; try again in a few minutes', 409);
+    const pay = Math.min(amount ?? due, due);
+    const member = await t.one('SELECT id FROM members WHERE tenant_id = ? AND phone = ?', [store.tenantId, phone]);
+    if (!member) throw new DomainError('you have no member wallet at this venue', 404);
+    const n = await t.run('UPDATE members SET balance = balance - ? WHERE id = ? AND balance >= ?', [pay, member.id, pay]);
+    if (!n) throw new DomainError('not enough balance in your wallet', 402);
+    const now = Date.now();
+    await t.run('INSERT INTO wallet_ledger (member_id, store_id, delta, reason, bill_id, ts) VALUES (?,?,?,?,?,?)', [member.id, store.storeId, -pay, 'bill payment (guest app)', billId, now]);
+    await t.run("INSERT INTO payments (bill_id, method, amount, status, created_at, paid_at, customer_id) VALUES (?,'member',?,'paid',?,?,?)", [billId, pay, now, now, customerId]);
+    await audit(t, { tenantId: store.tenantId, storeId: store.storeId }, 'pay.member', 'bill', billId, { amount: pay, customerId, via: 'guest' });
+    return { paid: pay, settled: await settleIfPaid(t, null, billId) };
+  });
+}
+
+// ---------- bookings ----------
+
+export async function createGuestBooking(db: Db, customerId: number, input: Record<string, unknown>) {
+  const c = await db.one('SELECT phone, display_name FROM customers WHERE id = ?', [customerId]);
+  if (!c?.phone) throw new DomainError('verify your phone number so the venue can reach you', 403);
+  const s = await storeByCode(db, String(input.company ?? ''), String(input.store ?? ''));
+  const partySize = int(input.partySize, 'partySize', 1, MAX_PARTY);
+  const eta = int(input.eta, 'eta', 0, Number.MAX_SAFE_INTEGER);
+  const now = Date.now();
+  if (eta < now + BOOKING_MIN_LEAD_MS || eta > now + BOOKING_HORIZON_MS) throw new DomainError('choose a time between 15 minutes and 60 days from now', 422);
+  const name = text(input.name, 'name', 40) || c.display_name;
+  const note = text(input.note, 'note');
+  return db.tx(async (t) => {
+    const active = await t.one("SELECT COUNT(*) AS n FROM bookings WHERE customer_id = ? AND store_id = ? AND status IN ('submitted','confirmed') AND eta > ?", [customerId, s.storeId, now]);
+    if (active.n >= MAX_ACTIVE_BOOKINGS) throw new DomainError(`you already have ${MAX_ACTIVE_BOOKINGS} upcoming bookings here`, 409);
+    const id = await t.insert(
+      `INSERT INTO bookings (store_id, source, phone, name, party_size, eta, status, created_at, customer_id, note)
+       VALUES (?, 'guest', ?, ?, ?, ?, 'submitted', ?, ?, ?)`, [s.storeId, c.phone, name, partySize, eta, now, customerId, note]);
+    await audit(t, { tenantId: s.tenantId, storeId: s.storeId }, 'booking.guest', 'booking', id, { customerId, partySize, eta });
+    return { bookingId: id };
+  });
+}
+
+export async function cancelGuestBooking(db: Db, customerId: number, bookingId: number): Promise<void> {
+  const n = await db.run("UPDATE bookings SET status = 'cancelled' WHERE id = ? AND customer_id = ? AND status IN ('submitted','confirmed') AND eta > ?", [bookingId, customerId, Date.now()]);
+  if (!n) throw new DomainError('this booking can no longer be cancelled', 409);
+}
+
+// ---------- my account at one company ----------
+
+export async function accountAt(db: Db, customerId: number, company: string) {
+  const t = await tenantByCode(db, company);
+  const phone = (await db.one('SELECT phone FROM customers WHERE id = ?', [customerId]))?.phone ?? null;
+  const member = phone ? await db.one('SELECT id, balance FROM members WHERE tenant_id = ? AND phone = ?', [t.id, phone]) : undefined;
+  const ledger = member
+    ? await db.all('SELECT delta, reason, ts FROM wallet_ledger WHERE member_id = ? ORDER BY id DESC LIMIT ?', [member.id, RECENT])
+    : [];
+  const stash = phone
+    ? await db.all(
+      `SELECT x.code, x.name, x.left_milli AS "leftMilli", x.qty_milli AS "qtyMilli", x.expires_at AS "expiresAt", s.name AS "storeName"
+       FROM stash x JOIN stores s ON s.id = x.store_id WHERE s.tenant_id = ? AND x.phone = ? AND x.status = 'stored' AND x.left_milli > 0 AND x.expires_at >= ?
+       ORDER BY x.expires_at`, [t.id, phone, Date.now()])
+    : [];
+  const bookings = await db.all(
+    `SELECT b.id, b.status, b.party_size AS "partySize", b.eta, b.name, b.note, s.name AS "storeName", d.name AS "tableName"
+     FROM bookings b JOIN stores s ON s.id = b.store_id LEFT JOIN dining_tables d ON d.id = b.table_id
+     WHERE b.customer_id = ? AND s.tenant_id = ? ORDER BY b.eta DESC LIMIT ?`, [customerId, t.id, RECENT]);
+  const orders = await db.all(`${ORDER_SQL} WHERE o.customer_id = ? AND s.tenant_id = ? ORDER BY o.id DESC LIMIT ?`, [customerId, t.id, RECENT]);
+  const items = await orderItems(db, orders.map((o) => o.id));
+  return {
+    company: { name: t.name, code: t.code },
+    phoneVerified: Boolean(phone),
+    wallet: member ? { balance: member.balance, ledger } : null,
+    stash, bookings,
+    orders: orders.map((o) => orderView(o, items.get(o.id) ?? [])),
+  };
+}

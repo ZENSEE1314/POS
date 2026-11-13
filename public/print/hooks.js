@@ -64,10 +64,10 @@ export const flushAllTickets = () => [...pendingTickets.keys()].forEach(flushTic
  * Queues the lines just added so one burst of taps becomes one ticket per station. Products with no station are
  * skipped. The same product added twice in the window is merged into one line with the summed quantity.
  */
-export function queueTicketLine({ billId, product, qty, gift }) {
+export function queueTicketLine({ billId, product, qty, gift, table }) {
   if (!product?.station || !autoEnabled('autoTickets')) return;
   const entry = pendingTickets.get(billId) ?? {
-    table: S.tables.find((x) => x.id === S.bill?.bill.table_id)?.name ?? `#${billId}`,
+    table: table ?? S.tables.find((x) => x.id === S.bill?.bill.table_id)?.name ?? `#${billId}`,
     waiter: app.actor?.name, ts: Date.now(), lines: [], timer: null,
   };
   const same = entry.lines.find((l) => l.productId === product.id && l.gift === Boolean(gift));

@@ -1,5 +1,5 @@
 import { createSign, createVerify } from 'node:crypto';
-import type { ChargeRequest, ChargeResult, NotifyResult, PayProvider } from './types.ts';
+import type { ChargeRequest, ChargeResult, GuestCharge, GuestChargeRequest, NotifyResult, PayProvider } from './types.ts';
 
 export interface AlipayConfig {
   appId: string;
@@ -62,6 +62,49 @@ export class AlipayProvider implements PayProvider {
     const r = json.alipay_trade_precreate_response;
     if (!r || r.code !== '10000' || !r.qr_code) throw new Error(`alipay precreate failed: ${r?.code} ${r?.sub_msg ?? r?.msg ?? res.status}`);
     return { qrContent: r.qr_code };
+  }
+
+  /** Mobile browser / Alipay app: the guest is sent to Alipay's WAP cashier, then back to returnUrl. */
+  async createGuestCharge(req: GuestChargeRequest): Promise<GuestCharge> {
+    const params = this.commonParams('alipay.trade.wap.pay', {
+      notify_url: req.notifyUrl,
+      return_url: req.returnUrl,
+      biz_content: JSON.stringify({
+        out_trade_no: req.outTradeNo,
+        total_amount: (req.amountFen / 100).toFixed(2),
+        subject: req.subject,
+        product_code: 'QUICK_WAP_WAY',
+      }),
+    });
+    params.sign = this.signParams(params);
+    return { kind: 'redirect', url: `${this.gateway}?${new URLSearchParams(params).toString()}` };
+  }
+
+  /** Signed call to any gateway method (used by Alipay login: alipay.system.oauth.token, alipay.user.info.share). */
+  async call(method: string, extra: Record<string, string>): Promise<any> {
+    const params = this.commonParams(method, extra);
+    params.sign = this.signParams(params);
+    const res = await fetch(this.gateway, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8' },
+      body: new URLSearchParams(params).toString(),
+    });
+    const json = (await res.json()) as any;
+    const key = `${method.replace(/\./g, '_')}_response`;
+    if (json.error_response) throw new Error(`alipay ${method} failed: ${json.error_response.code} ${json.error_response.sub_msg ?? json.error_response.msg ?? ''}`);
+    return json[key];
+  }
+
+  get appId(): string {
+    return this.cfg.appId;
+  }
+
+  private get gateway(): string {
+    return this.cfg.gateway ?? 'https://openapi.alipay.com/gateway.do';
+  }
+
+  private commonParams(method: string, extra: Record<string, string>): Record<string, string> {
+    return { app_id: this.cfg.appId, method, format: 'JSON', charset: 'utf-8', sign_type: 'RSA2', timestamp: alipayTimestamp(), version: '1.0', ...extra };
   }
 
   /** Notify is form-urlencoded; sign covers every field except sign and sign_type. */

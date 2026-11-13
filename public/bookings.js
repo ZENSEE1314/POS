@@ -30,7 +30,7 @@ export function mountBookings(root) {
     const tables = byId(state.tables);
     const cols = [
       { label: t('bookings.eta'), cell: (b) => fmtDateTime(b.eta) },
-      { label: t('bookings.guest'), cell: (b) => html`<strong>${b.name || '-'}</strong><br><span class="muted">${b.phone}</span>` },
+      { label: t('bookings.guest'), cell: (b) => html`<strong>${b.name || '-'}</strong><br><span class="muted">${b.phone}</span>${b.note && html`<br><span class="muted">“${b.note}”</span>`}` },
       { label: t('bookings.party'), cell: (b) => b.party_size, num: true },
       { label: t('bookings.source'), cell: (b) => tOr(`source.${b.source}`, b.source) },
       { label: t('bookings.table'), cell: (b) => tables.get(b.table_id)?.name ?? '-' },

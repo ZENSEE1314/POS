@@ -2,6 +2,7 @@ import type { Db } from './db.ts';
 import { audit } from './db.ts';
 import { expireStash } from './stash.ts';
 import { settleIfPaid } from './bills.ts';
+import { purgeExpiredGuestAuth } from './guest/accounts.ts';
 
 export type Level = 'info' | 'warn' | 'error';
 
@@ -159,6 +160,7 @@ export async function selfHeal(db: Db): Promise<HealReport> {
   await alert('negative_stock', ids(negStock), 'products with negative stock: a stocktake or stock-in was missed');
 
   await db.run('DELETE FROM sessions WHERE expires_at < ?', [Date.now()]);
+  await purgeExpiredGuestAuth(db);
   return report;
 }
 

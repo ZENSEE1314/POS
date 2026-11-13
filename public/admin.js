@@ -5,6 +5,7 @@ import { html, setHtml, fmtMoney, toYuanInput, productName, byId } from './util.
 import { delegate, formDialog, confirmDialog, dataTable, badge, skeleton, notifyError, pressed } from './ui.js';
 import { categoryLabel } from './bill-view.js';
 import { printersSection, printerActions } from './print/admin-section.js';
+import { showTableQr, showVenueQr } from './table-qr.js';
 
 const TABLE_KINDS = ['bar', 'booth', 'room'];
 const RULE_ROLES = ['sales', 'waiter'];
@@ -28,7 +29,8 @@ export function mountAdmin(root) {
         { label: t('admin.name'), cell: (x) => x.name }, { label: t('admin.zone'), cell: (x) => x.zone || '-' },
         { label: t('admin.kind'), cell: (x) => tOr(`kind.${x.kind}`, x.kind) }, { label: t('admin.capacity'), cell: (x) => x.capacity, num: true },
         { label: t('floor.minSpend'), cell: (x) => fmtMoney(x.min_spend), num: true }, { label: t('floor.tableFee'), cell: (x) => fmtMoney(x.table_fee), num: true },
-        { label: t('common.status'), cell: (x) => activeBadge(x.active) }, { label: t('common.actions'), cell: (x) => btn('edit', x.id, t('common.edit')) }] }),
+        { label: t('common.status'), cell: (x) => activeBadge(x.active) },
+        { label: t('common.actions'), cell: (x) => html`<div class="row">${btn('edit', x.id, t('common.edit'))}${x.active && btn('tableQr', x.id, t('admin.qr'))}</div>` }] }),
       dialog: (x) => tableDialog(x),
     },
     products: {
@@ -82,7 +84,8 @@ export function mountAdmin(root) {
   function renderBody() {
     const sec = sections[active];
     setHtml(root.querySelector('#ad-body'), html`<div class="view-bar"><h3 class="section-title">${t(`admin.${active}`)}</h3>
-      ${sec.add && html`<button type="button" class="btn btn--primary" data-action="add">${t(sec.add)}</button>`}</div>
+      <div class="row">${active === 'tables' && html`<button type="button" class="btn btn--ghost" data-action="venueQr">${t('admin.venueQr')}</button>`}
+      ${sec.add && html`<button type="button" class="btn btn--primary" data-action="add">${t(sec.add)}</button>`}</div></div>
       <div class="panel">${sec.view(state.rows)}</div>`);
   }
 
@@ -193,6 +196,8 @@ export function mountAdmin(root) {
         await del(`/api/commission-rules/${el.dataset.id}`);
         await reload();
       },
+      tableQr: (el) => showTableQr(rowOf(el), reload),
+      venueQr: showVenueQr,
       toggleStaff: staffToggle,
       resetPin,
       ...printerActions({ rowOf, reload }),
