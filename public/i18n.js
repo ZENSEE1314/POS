@@ -427,13 +427,28 @@ const ERRORS_ZH = {
   'self sign-up is disabled': '未开放自助注册。',
   'phone required': '请填写手机号。',
   'member not found': '找不到该会员。',
+  'barcode: 1-32 letters, digits or hyphens': '条码只能是 1 到 32 位字母、数字或连字符。',
+  'no product has this barcode': '没有商品使用这个条码。',
+  'this scale label has no amount on it': '这张秤签上没有金额或重量。',
+  'this label carries a weight but the item is not sold by weight': '秤签是重量，但该商品不是称重销售。',
+  'this item is sold by weight: send qty 1 and weightG': '该商品按重量销售，请先称重。',
+  'another product already has this barcode': '已有其他商品使用这个条码。',
+  'this bill already has a member': '本单已绑定会员。',
+  'this sale is not on a table': '这笔订单不在台位上。',
+  'set stock to 0 before changing how this item is sold': '修改销售方式前请先把库存调为 0。',
+  'a supplier with this name already exists': '已有同名供应商。',
+  'supplier not found': '找不到该供应商。',
+  'purchase order not found': '找不到该采购单。',
+  'choose a product or a category, not both': '商品和分类只能选一个。',
+  'promotion not found': '找不到该促销。',
 };
 
 const ERROR_PATTERNS_ZH = [
   [/^role (\w+) may not (.+)$/, (m) => `当前角色（${m[1]}）无权执行此操作（${m[2]}）。`],
   [/^(\w+) payments are not configured for this server$/, (m) => `服务器尚未配置 ${m[1]} 支付。`],
   [/needs at least (\d+)/, (m) => `PIN 码至少需要 ${m[1]} 位。`],
-  [/^(bill|booking|stash) is (\w+)$/, (m) => `当前状态为 ${m[2]}，无法执行此操作。`],
+  [/^the (\w+) module is switched off for this company$/, () => '本公司未开启这个功能模块。'],
+  [/^(order|bill|booking|stash) is (\w+)$/, (m) => `当前状态为 ${m[2]}，无法执行此操作。`],
 ];
 
 let lang = 'en';

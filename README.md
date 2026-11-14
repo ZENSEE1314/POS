@@ -1,13 +1,14 @@
 # NightPOS 夜场收银
 
-Multi-company, multi-store POS and management platform for bars and clubs in China. English / 中文 interface.
+Multi-company, multi-store POS and management platform for bars, clubs, restaurants, cafes, grocery and retail shops,
+pet cafes and pet shops, salons and spas in China. English / 中文 interface.
 WeChat Pay, Alipay and Douyin (抖音来客) integrations; Postgres; self-monitoring.
 
 ## Run locally
 ```bash
 npm install
 node scripts/dev.ts          # http://localhost:3500: simulated payments + demo company (dev only)
-npm test                     # 504 tests on embedded Postgres (PGlite)
+npm test                     # 539 tests on embedded Postgres (PGlite); on a low-memory machine use --test-concurrency=1
 node scripts/test-pg.ts      # same suite through the production `pg` driver over the Postgres wire protocol
 node scripts/simulate.ts http://localhost:3500 dev-admin-key 4 25   # multi-company load simulation + books audit
 ```
@@ -27,6 +28,47 @@ Payments are enabled per provider when their credentials exist (cash, wallet and
 `WECHAT_APPID, WECHAT_MCHID, WECHAT_SERIAL_NO, WECHAT_API_V3_KEY, WECHAT_PRIVATE_KEY, WECHAT_PLATFORM_PUBKEY` and
 `ALIPAY_APP_ID, ALIPAY_PRIVATE_KEY, ALIPAY_PUBLIC_KEY` (PEM text, `\n` escapes allowed). Douyin: `DOUYIN_WEBHOOK_SECRET`.
 `PAY_MODE=mock` swaps in simulated providers: development only, never with real customers.
+
+## Business types and modules
+Every company has a business type, picked at sign-up (`businessType` on `POST /api/signup` and `/platform/companies`) and
+changeable by the owner in **Admin > Business**. The type switches on a starting set of modules; each module can then be
+switched on or off for the whole company. Switched-off modules disappear from the till and their API answers 404.
+
+| Module | What it adds | On by default for |
+|---|---|---|
+| Tables | floor plan, open a table, transfer | bar, restaurant, cafe, pet, other |
+| Minimum spend | minimum spend and table fee per table | bar |
+| Sales reps | a rep must be chosen to open a table; commission | bar, salon |
+| Stored bottles | Stash tab | bar |
+| Bookings | Bookings tab, booking from the customer app | bar, restaurant, pet, salon |
+| Kitchen tickets | bar / kitchen station per product | bar, restaurant, cafe |
+| Counter checkout | **Checkout** tab: quick sales without a table, several can be held open | restaurant, cafe, retail, pet, salon, other |
+| Barcodes and weighing | scan box on the bill, items sold per kg, scale labels | retail, pet |
+| Purchasing | **Stock** tab: low stock, suppliers, purchase orders, receiving | restaurant, retail, pet |
+| Promotions | sale prices and percent-off by product, category or everything; members-only option | all |
+| Customer app | Guest orders tab and `/g/<company>` | all |
+| Pickup and delivery | guests order ahead from the shop page | restaurant, cafe, retail, pet |
+
+Without the sales reps module, whoever opens a table or sale owns it and no commission rules are created.
+Changing the type in Admin resets modules to that type's set; tick *Also set the customer app features* to switch the
+customer app extras too (a shop gets loyalty, invites and events, not song requests or stored bottles).
+
+**Shops (grocery, convenience, pet shop):**
+- Products carry a barcode, how they are sold (each, or per kg), cost price, member price and a reorder level.
+- Scan a product's barcode into the scan box on the bill (a USB/Bluetooth scanner types it and presses Enter). An item sold
+  by weight asks for its weight; its stock is kept in grams.
+- Shop scale labels (EAN-13 starting with 2: `2` + 6-digit item code + 5-digit value + check digit) are read directly. The
+  item code is the product's barcode; the value is the price in fen or the weight in grams (Admin > Business, *Scale
+  labels carry*). Price labels charge the printed price.
+- Member price applies when the sale has a member; *Add member* on an open sale re-prices lines that are cheaper for members.
+  Running promotions are applied when an item is added; the lowest of list, member and promotion price wins. The line shows why.
+- **Stock**: low stock (at or below reorder level, with a suggested order), suppliers, purchase orders (draft, ordered,
+  received, cancelled). Receiving adds what actually arrived to stock, logs it and sets each item's cost to the price paid.
+
+**Pickup and delivery:** the shop page offers *Order for pickup or delivery* (verified phone needed; items sold by weight
+are bought in store). Staff accept it in Guest orders, which opens a pickup or delivery sale under Checkout at today's
+prices (member prices included). The guest can then pay it in the app (WeChat Pay, Alipay, wallet) or at the counter. Staff
+move it along: pickup *ready* then *done*, delivery *out* then *done*; the guest sees each step under *My orders*.
 
 ## Customer app (顾客端)
 A mobile web page for guests, at `/g/<company code>` (works in WeChat, Alipay, Douyin and any phone browser; no install).

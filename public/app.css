@@ -237,6 +237,9 @@ table.data .num, .num { text-align: right; font-variant-numeric: tabular-nums; w
 .qr { display: block; width: 100%; height: auto; }
 .add-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
 .add-bar .field, .add-bar .check { margin-bottom: 0; }
+.scan-bar { display: flex; align-items: flex-end; gap: var(--space-2); margin-bottom: var(--space-3); }
+.scan-bar .field { margin-bottom: 0; }
+.counter__actions { margin-bottom: var(--space-4); }
 .products { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: var(--space-2); max-height: 320px; overflow-y: auto; padding: var(--space-1); }
 .product { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); min-height: 84px; padding: var(--space-3); font: inherit; text-align: left; color: var(--color-fg); cursor: pointer; background: var(--color-surface-hi); border: 1px solid var(--color-border); border-radius: var(--radius-md); transition: border-color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out); }
 .product:hover:not(:disabled) { border-color: var(--color-primary-strong); transform: translateY(-1px); }

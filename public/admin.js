@@ -7,12 +7,18 @@ import { categoryLabel } from './bill-view.js';
 import { printersSection, printerActions } from './print/admin-section.js';
 import { showTableQr, showVenueQr } from './table-qr.js';
 import { guestAdminSections } from './guest-admin.js';
+import { businessAdminSections, visibleSectionIds } from './business-admin.js';
+import { hasModule, isWeighed, fmtStock, fmtKg } from './business.js';
 
 const TABLE_KINDS = ['bar', 'booth', 'room'];
 const RULE_ROLES = ['sales', 'waiter'];
 const BPS_PER_PERCENT = 100;
-const SECTION_IDS = ['tables', 'products', 'rules', 'staff', 'printers', 'guestApp', 'events', 'rewards', 'prizes'];
+const SECTION_IDS = ['business', 'tables', 'products', 'promotions', 'rules', 'staff', 'printers', 'guestApp', 'events', 'rewards', 'prizes'];
 const STATIONS = ['', 'bar', 'kitchen'];
+const UNITS = ['each', 'kg'];
+const SECTION_LABELS = { business: 'biz.section', promotions: 'promo.section' };
+const MILLI = 1000;
+const GRAMS_PER_KG = 1000;
 let active = 'tables';
 
 const activeBadge = (on) => (on ? badge(t('common.active'), 'success', '✓') : badge(t('common.inactive'), 'neutral', '—'));
@@ -21,6 +27,8 @@ const options = (values, labelOf) => values.map((v) => ({ value: v, label: label
 
 export function mountAdmin(root) {
   const state = { rows: [], products: [], stores: [] };
+  const sectionIds = visibleSectionIds(SECTION_IDS, can('hq.write'));
+  if (!sectionIds.includes(active)) active = sectionIds.includes('products') ? 'products' : sectionIds[0];
 
   const sections = {
     tables: {
@@ -29,7 +37,7 @@ export function mountAdmin(root) {
       view: (rows) => dataTable({ caption: t('admin.tables'), empty: t('common.noData'), rows, cols: [
         { label: t('admin.name'), cell: (x) => x.name }, { label: t('admin.zone'), cell: (x) => x.zone || '-' },
         { label: t('admin.kind'), cell: (x) => tOr(`kind.${x.kind}`, x.kind) }, { label: t('admin.capacity'), cell: (x) => x.capacity, num: true },
-        { label: t('floor.minSpend'), cell: (x) => fmtMoney(x.min_spend), num: true }, { label: t('floor.tableFee'), cell: (x) => fmtMoney(x.table_fee), num: true },
+        ...(hasModule('minSpend') ? [{ label: t('floor.minSpend'), cell: (x) => fmtMoney(x.min_spend), num: true }, { label: t('floor.tableFee'), cell: (x) => fmtMoney(x.table_fee), num: true }] : []),
         { label: t('common.status'), cell: (x) => activeBadge(x.active) },
         { label: t('common.actions'), cell: (x) => html`<div class="row">${btn('edit', x.id, t('common.edit'))}${x.active && btn('tableQr', x.id, t('admin.qr'))}</div>` }] }),
       dialog: (x) => tableDialog(x),
@@ -39,8 +47,12 @@ export function mountAdmin(root) {
       add: 'admin.addProduct',
       view: (rows) => dataTable({ caption: t('admin.products'), empty: t('common.noData'), rows, cols: [
         { label: t('admin.name'), cell: (x) => html`<strong>${x.name}</strong>${x.name_en && html`<br><span class="muted">${x.name_en}</span>`}` },
-        { label: t('admin.category'), cell: (x) => categoryLabel(x.category) }, { label: t('admin.station'), cell: (x) => t(`station.${x.station || 'none'}`) }, { label: t('admin.price'), cell: (x) => fmtMoney(x.price), num: true },
-        { label: t('admin.stock'), cell: (x) => (x.track_stock ? x.stock : '∞'), num: true }, { label: t('common.status'), cell: (x) => activeBadge(x.active) },
+        { label: t('admin.category'), cell: (x) => categoryLabel(x.category) },
+        ...(hasModule('kitchen') ? [{ label: t('admin.station'), cell: (x) => t(`station.${x.station || 'none'}`) }] : []),
+        ...(hasModule('barcode') ? [{ label: t('prod.barcode'), cell: (x) => x.barcode || '-' }] : []),
+        { label: t('admin.price'), cell: (x) => (isWeighed(x) ? t('price.perKg', { price: fmtMoney(x.price) }) : fmtMoney(x.price)), num: true },
+        { label: t('prod.memberPrice'), cell: (x) => (x.member_price != null ? fmtMoney(x.member_price) : '-'), num: true },
+        { label: t('admin.stock'), cell: (x) => (x.track_stock ? fmtStock(x) : '∞'), num: true }, { label: t('common.status'), cell: (x) => activeBadge(x.active) },
         { label: t('common.actions'), cell: (x) => html`<div class="row">${btn('edit', x.id, t('common.edit'))}${x.track_stock && btn('stock', x.id, t('admin.adjustStock'))}</div>` }] }),
       dialog: (x) => productDialog(x),
     },
@@ -73,6 +85,7 @@ export function mountAdmin(root) {
     },
     printers: printersSection(() => reload()),
     ...guestAdminSections(() => reload()),
+    ...businessAdminSections(() => reload()),
   };
 
   const reload = async () => {
@@ -85,7 +98,7 @@ export function mountAdmin(root) {
 
   function renderBody() {
     const sec = sections[active];
-    setHtml(root.querySelector('#ad-body'), html`<div class="view-bar"><h3 class="section-title">${t(`admin.${active}`)}</h3>
+    setHtml(root.querySelector('#ad-body'), html`<div class="view-bar"><h3 class="section-title">${t(SECTION_LABELS[active] ?? `admin.${active}`)}</h3>
       <div class="row">${active === 'tables' && html`<button type="button" class="btn btn--ghost" data-action="venueQr">${t('admin.venueQr')}</button>`}
       ${sec.add && html`<button type="button" class="btn btn--primary" data-action="add">${t(sec.add)}</button>`}</div></div>
       <div class="panel">${sec.view(state.rows)}</div>`);
@@ -98,8 +111,9 @@ export function mountAdmin(root) {
       { name: 'zone', label: t('admin.zone'), value: x?.zone },
       ...(x ? [] : [{ name: 'kind', label: t('admin.kind'), type: 'select', options: options(TABLE_KINDS, (k) => t(`kind.${k}`)) }]),
       { name: 'capacity', label: t('admin.capacity'), type: 'int', min: 1, value: x?.capacity ?? 4 },
-      { name: 'minSpend', label: t('floor.minSpend'), type: 'money', value: toYuanInput(x?.min_spend ?? 0) },
-      { name: 'tableFee', label: t('floor.tableFee'), type: 'money', value: toYuanInput(x?.table_fee ?? 0) },
+      ...(hasModule('minSpend') ? [
+        { name: 'minSpend', label: t('floor.minSpend'), type: 'money', value: toYuanInput(x?.min_spend ?? 0) },
+        { name: 'tableFee', label: t('floor.tableFee'), type: 'money', value: toYuanInput(x?.table_fee ?? 0) }] : []),
       ...(x ? [{ name: 'active', label: t('common.active'), type: 'checkbox', value: x.active }] : []),
     ],
     onSubmit: async (v) => {
@@ -109,20 +123,35 @@ export function mountAdmin(root) {
     },
   });
 
+  /** Quantities typed in the dialog arrive as thousandths: grams for items by weight, pieces x 1000 otherwise. */
+  const fromMilli = (unit, milli) => (milli == null ? 0 : unit === 'kg' ? milli : Math.round(milli / MILLI));
+  const toQtyInput = (p, n) => (isWeighed(p) ? fmtKg(n) : String(n));
+
   const productDialog = (x) => formDialog({
     title: x ? t('common.edit') : t('admin.addProduct'),
     fields: [
       { name: 'name', label: t('admin.name'), required: true, value: x?.name },
       { name: 'nameEn', label: t('admin.nameEn'), value: x?.name_en },
       { name: 'category', label: t('admin.category'), value: x?.category, hint: t('admin.categoryHint') },
-      { name: 'station', label: t('admin.station'), type: 'select', value: x?.station ?? '', hint: t('admin.stationHint'), options: options(STATIONS, (s) => t(`station.${s || 'none'}`)) },
+      ...(hasModule('kitchen') ? [{ name: 'station', label: t('admin.station'), type: 'select', value: x?.station ?? '', hint: t('admin.stationHint'), options: options(STATIONS, (s) => t(`station.${s || 'none'}`)) }] : []),
+      ...(hasModule('barcode') ? [
+        { name: 'barcode', label: t('prod.barcode'), value: x?.barcode ?? '', hint: t('prod.barcodeHint') },
+        { name: 'unit', label: t('prod.unit'), type: 'select', value: x?.unit ?? 'each', hint: x ? t('prod.unitLocked') : '', options: options(UNITS, (u) => t(`unit.${u}`)) }] : []),
       { name: 'price', label: t('admin.price'), type: 'money', required: true, value: x ? toYuanInput(x.price) : '' },
-      ...(x ? [] : [{ name: 'stock', label: t('admin.stock'), type: 'int', min: 0, value: 0 }]),
+      { name: 'memberPrice', label: t('prod.memberPrice'), type: 'money', hint: t('prod.memberPriceHint'), value: x?.member_price != null ? toYuanInput(x.member_price) : '' },
+      ...(hasModule('purchasing') ? [
+        { name: 'cost', label: t('prod.cost'), type: 'money', value: toYuanInput(x?.cost ?? 0) },
+        { name: 'reorderLevel', label: t('prod.reorder'), type: 'qty', hint: t('prod.reorderHint'), value: x ? toQtyInput(x, x.reorder_level) : '0' }] : []),
+      ...(x ? [] : [{ name: 'stock', label: hasModule('barcode') ? t('prod.stockKg') : t('admin.stock'), type: 'qty', value: '0' }]),
       { name: 'trackStock', label: t('admin.trackStock'), type: 'checkbox', value: x?.track_stock ?? true },
       ...(x ? [{ name: 'active', label: t('common.active'), type: 'checkbox', value: x.active }] : []),
     ],
     onSubmit: async (v) => {
-      if (x) await patch(`/api/products/${x.id}`, v); else await post('/api/products', { ...v, stock: v.stock ?? 0 });
+      const unit = v.unit ?? x?.unit ?? 'each';
+      const body = { ...v, memberPrice: v.memberPrice ?? null };
+      if (v.reorderLevel !== undefined) body.reorderLevel = fromMilli(unit, v.reorderLevel);
+      if (v.stock !== undefined) body.stock = fromMilli(unit, v.stock);
+      if (x) await patch(`/api/products/${x.id}`, body); else await post('/api/products', body);
       await reload();
     },
   });
@@ -152,10 +181,17 @@ export function mountAdmin(root) {
 
   const stockDialog = (x) => formDialog({
     title: t('admin.stockTitle', { name: productName(x) }),
-    intro: t('admin.stockNow', { n: x.stock }),
-    fields: [{ name: 'delta', label: t('admin.delta'), type: 'int', required: true, hint: t('admin.deltaHint') }, { name: 'reason', label: t('floor.reason'), required: true }],
+    intro: t('admin.stockNow', { n: fmtStock(x) }),
+    // Items by weight: kg with decimals (kept as grams); others: whole pieces.
+    fields: [{ name: 'delta', label: isWeighed(x) ? `${t('admin.delta')} (kg)` : t('admin.delta'), type: isWeighed(x) ? 'text' : 'int', required: true, hint: t('admin.deltaHint') },
+      { name: 'reason', label: t('floor.reason'), required: true }],
     submit: 'admin.adjustStock',
-    onSubmit: async (v) => { await post(`/api/products/${x.id}/stock`, { delta: v.delta, reason: v.reason }); await reload(); },
+    onSubmit: async (v) => {
+      const delta = isWeighed(x) ? Math.round(Number(v.delta) * GRAMS_PER_KG) : v.delta;
+      if (!Number.isFinite(delta)) throw new Error(t('err.badQty'));
+      await post(`/api/products/${x.id}/stock`, { delta, reason: v.reason });
+      await reload();
+    },
   });
 
   const rowOf = (el) => state.rows.find((r) => r.id === Number(el.dataset.id));
@@ -177,8 +213,8 @@ export function mountAdmin(root) {
   };
 
   setHtml(root, html`<section aria-labelledby="ad-title"><h2 id="ad-title" class="view-title">${t('nav.admin')}</h2>
-    <div class="chips" role="group" aria-label="${t('nav.admin')}">${SECTION_IDS.map((id) =>
-      html`<button type="button" class="chip" data-action="section" data-id="${id}" aria-pressed="${pressed(id === active)}">${t(`admin.${id}`)}</button>`)}</div>
+    <div class="chips" role="group" aria-label="${t('nav.admin')}">${sectionIds.map((id) =>
+      html`<button type="button" class="chip" data-action="section" data-id="${id}" aria-pressed="${pressed(id === active)}">${t(SECTION_LABELS[id] ?? `admin.${id}`)}</button>`)}</div>
     <div id="ad-body" aria-live="polite">${skeleton(5)}</div></section>`);
   reload().catch(notifyError);
 

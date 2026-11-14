@@ -221,6 +221,12 @@ const zh = {
 };
 
 const DICTS = { en, zh };
+
+/** Lets a screen module bring its own strings. */
+export function addStrings(extra) {
+  Object.assign(en, extra.en);
+  Object.assign(zh, extra.zh);
+}
 let lang = 'zh';
 
 export function loadLang() {

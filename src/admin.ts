@@ -3,9 +3,11 @@ import { audit, DomainError } from './db.ts';
 import type { Actor, Role } from './auth.ts';
 import { hashPin, isTenantWide, require_, whoOf } from './auth.ts';
 import { validStation } from './printers.ts';
+import { cleanBarcode } from './retail.ts';
 
 const MIN_PIN_LENGTH = 4;
 const TABLE_KINDS = ['bar', 'booth', 'room'];
+const UNITS = ['each', 'kg'];
 const ROLES: Role[] = ['host', 'waiter', 'cashier', 'manager', 'finance', 'owner'];
 
 /** Fen/count ceiling (10 million yuan) so SUM(qty * price) and stock arithmetic stay far inside BIGINT. */
@@ -66,12 +68,31 @@ export async function updateTable(db: Db, actor: Actor, id: number, b: any): Pro
 
 // ---- products and stock ------------------------------------------------------------------------
 
+const unitOf = (v: unknown): string => {
+  if (typeof v !== 'string' || !UNITS.includes(v)) throw new DomainError(`unit must be one of ${UNITS.join(', ')}`, 422);
+  return v;
+};
+/** An empty barcode or member price means "none". */
+const optionalBarcode = (v: unknown): string | null => (v == null || v === '' ? null : cleanBarcode(v));
+const optionalPrice = (v: unknown, name: string): number | null => (v == null || v === '' ? null : int(v, name));
+
+async function assertBarcodeFree(db: Db, storeId: number, barcode: string | null, exceptId = 0): Promise<void> {
+  if (barcode && (await db.one('SELECT 1 AS x FROM products WHERE store_id = ? AND barcode = ? AND id <> ?', [storeId, barcode, exceptId]))) {
+    throw new DomainError('another product already has this barcode', 409);
+  }
+}
+
 export async function createProduct(db: Db, actor: Actor, b: any): Promise<number> {
   require_(actor, 'admin.write');
   const name = text(b.name, 'name');
   if (await db.one('SELECT 1 AS x FROM products WHERE store_id = ? AND name = ?', [actor.storeId, name])) throw new DomainError('product name already used', 409);
-  const id = await db.insert('INSERT INTO products (store_id, name, name_en, category, price, stock, track_stock, station) VALUES (?,?,?,?,?,?,?,?)',
-    [actor.storeId, name, b.nameEn ? String(b.nameEn) : null, String(b.category ?? ''), int(b.price, 'price'), int(b.stock ?? 0, 'stock'), b.trackStock !== false, validStation(b.station ?? '')]);
+  const barcode = optionalBarcode(b.barcode);
+  await assertBarcodeFree(db, actor.storeId, barcode);
+  const id = await db.insert(
+    `INSERT INTO products (store_id, name, name_en, category, price, stock, track_stock, station, barcode, unit, cost, member_price, reorder_level)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [actor.storeId, name, b.nameEn ? String(b.nameEn) : null, String(b.category ?? ''), int(b.price, 'price'), int(b.stock ?? 0, 'stock'), b.trackStock !== false,
+      validStation(b.station ?? ''), barcode, unitOf(b.unit ?? 'each'), int(b.cost ?? 0, 'cost'), optionalPrice(b.memberPrice, 'memberPrice'), int(b.reorderLevel ?? 0, 'reorderLevel')]);
   await audit(db, whoOf(actor), 'product.create', 'product', id, b);
   return id;
 }
@@ -82,14 +103,25 @@ export async function updateProduct(db: Db, actor: Actor, id: number, b: any): P
   if (!p) throw new DomainError('product not found', 404);
   const name = b.name !== undefined ? text(b.name, 'name') : p.name;
   if (name !== p.name && (await db.one('SELECT 1 AS x FROM products WHERE store_id = ? AND name = ? AND id <> ?', [actor.storeId, name, id]))) throw new DomainError('product name already used', 409);
-  await db.run('UPDATE products SET name = ?, name_en = ?, category = ?, price = ?, track_stock = ?, active = ?, station = ? WHERE id = ?', [
+  const barcode = b.barcode !== undefined ? optionalBarcode(b.barcode) : p.barcode;
+  await assertBarcodeFree(db, actor.storeId, barcode, id);
+  // Stock of an item sold by weight is kept in grams, so switching unit would misread what is on the shelf.
+  const unit = b.unit !== undefined ? unitOf(b.unit) : p.unit;
+  if (unit !== p.unit && p.stock !== 0) throw new DomainError('set stock to 0 before changing how this item is sold', 409);
+  await db.run(
+    `UPDATE products SET name = ?, name_en = ?, category = ?, price = ?, track_stock = ?, active = ?, station = ?,
+       barcode = ?, unit = ?, cost = ?, member_price = ?, reorder_level = ? WHERE id = ?`, [
     name,
     b.nameEn !== undefined ? (b.nameEn ? String(b.nameEn) : null) : p.name_en,
     b.category ?? p.category,
     b.price !== undefined ? int(b.price, 'price') : p.price,
     b.trackStock !== undefined ? flag(b.trackStock, 'trackStock') : p.track_stock,
     b.active !== undefined ? flag(b.active, 'active') : p.active,
-    b.station !== undefined ? validStation(b.station) : p.station, id]);
+    b.station !== undefined ? validStation(b.station) : p.station,
+    barcode, unit,
+    b.cost !== undefined ? int(b.cost, 'cost') : p.cost,
+    b.memberPrice !== undefined ? optionalPrice(b.memberPrice, 'memberPrice') : p.member_price,
+    b.reorderLevel !== undefined ? int(b.reorderLevel, 'reorderLevel') : p.reorder_level, id]);
   await audit(db, whoOf(actor), 'product.update', 'product', id, b);
 }
 

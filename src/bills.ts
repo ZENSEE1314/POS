@@ -3,6 +3,8 @@ import { audit, DomainError } from './db.ts';
 import type { Actor } from './auth.ts';
 import { require_, whoOf } from './auth.ts';
 import { cleanPhone } from './phone.ts';
+import { hasModule, requireModule } from './business.ts';
+import { linePrice, priceFor } from './pricing.ts';
 
 export interface BillTotals {
   subtotal: number;      // active sale lines
@@ -15,6 +17,9 @@ export interface BillTotals {
 }
 
 const MAX_LINE_QTY = 9999;
+/** One tonne: far beyond any scale a till is attached to. */
+const MAX_WEIGHT_G = 1_000_000;
+export type TablelessChannel = 'counter' | 'pickup' | 'delivery';
 const isId = (v: unknown): boolean => Number.isSafeInteger(v) && (v as number) > 0;
 
 export async function openTable(db: Db, actor: Actor, input: { tableId: number; repId?: number; phone?: string; bookingId?: number }): Promise<number> {
@@ -39,13 +44,11 @@ export async function openTable(db: Db, actor: Actor, input: { tableId: number; 
       phone ??= booking.phone;
       bookingId = booking.id;
     }
+    // Without the reps module nobody earns sales commission, so the person opening the table owns the bill.
+    if (!repId && !(await hasModule(t, actor.tenantId, 'reps'))) repId = actor.id;
     // Commission ownership is decided here; forgetting the rep is the most common error in competing systems.
     if (!repId) throw new DomainError('sales rep (repId) is required to open a table', 422);
-    // The rep must work at this store, or be tenant-wide staff (store_id NULL).
-    const rep = await t.one(
-      'SELECT id FROM employees WHERE id = ? AND tenant_id = ? AND (store_id = ? OR store_id IS NULL) AND active', [repId, actor.tenantId, actor.storeId]);
-    if (!rep) throw new DomainError('sales rep not found in this store', 422);
-
+    await assertRep(t, actor, repId);
     const memberId = phone ? await getOrCreateMember(t, actor.tenantId, phone) : null;
     const billId = await t.insert(
       `INSERT INTO bills (store_id, table_id, rep_id, member_id, booking_id, min_spend, table_fee, opened_at)
@@ -57,36 +60,111 @@ export async function openTable(db: Db, actor: Actor, input: { tableId: number; 
   });
 }
 
+/** The rep must work at this store, or be tenant-wide staff (store_id NULL). */
+async function assertRep(t: Db, actor: Actor, repId: number): Promise<void> {
+  const rep = await t.one(
+    'SELECT id FROM employees WHERE id = ? AND tenant_id = ? AND (store_id = ? OR store_id IS NULL) AND active', [repId, actor.tenantId, actor.storeId]);
+  if (!rep) throw new DomainError('sales rep not found in this store', 422);
+}
+
+/** A quick sale at the counter: no table, the cashier owns it (or the chosen stylist / sales rep). Several can be open (held) at once. */
+export async function openCounterSale(db: Db, actor: Actor, input: { phone?: string; repId?: number }): Promise<number> {
+  require_(actor, 'order.add');
+  if (input.repId != null && !isId(input.repId)) throw new DomainError('repId must be an employee id', 422);
+  await requireModule(db, actor.tenantId, 'counter');
+  return db.tx((t) => openTablelessBill(t, actor, 'counter', input.repId ?? actor.id, input.phone));
+}
+
+export async function openTablelessBill(t: Db, actor: Actor, channel: TablelessChannel, repId: number, phone?: string): Promise<number> {
+  await assertRep(t, actor, repId);
+  const memberId = phone ? await getOrCreateMember(t, actor.tenantId, phone) : null;
+  const billId = await t.insert('INSERT INTO bills (store_id, table_id, channel, rep_id, member_id, opened_at) VALUES (?,NULL,?,?,?,?)',
+    [actor.storeId, channel, repId, memberId, Date.now()]);
+  await audit(t, whoOf(actor), 'bill.open', 'bill', billId, { channel, repId });
+  return billId;
+}
+
+/** Open sales that are not on a table (counter, pickup, delivery), newest first, with their running totals. */
+export async function listOpenTableless(db: Db, actor: Actor) {
+  require_(actor, 'order.add');
+  const bills = await db.all(
+    `SELECT b.id, b.channel, b.opened_at AS "openedAt", b.rep_id AS "repId", m.phone AS "memberPhone",
+            (SELECT COUNT(*) FROM bill_lines l WHERE l.bill_id = b.id AND l.status = 'active') AS lines
+     FROM bills b LEFT JOIN members m ON m.id = b.member_id
+     WHERE b.store_id = ? AND b.table_id IS NULL AND b.status = 'open' ORDER BY b.id DESC`, [actor.storeId]);
+  return Promise.all(bills.map(async (b) => ({ ...b, total: (await totals(db, b.id)).total })));
+}
+
 export async function getOrCreateMember(db: Db, tenantId: number, rawPhone: string): Promise<number> {
   const phone = cleanPhone(rawPhone);
   await db.run('INSERT INTO members (tenant_id, phone) VALUES (?,?) ON CONFLICT (tenant_id, phone) DO NOTHING', [tenantId, phone]);
   return (await db.one('SELECT id FROM members WHERE tenant_id = ? AND phone = ?', [tenantId, phone]))!.id;
 }
 
-async function assertOpenBill(db: Db, actor: Actor, billId: number): Promise<void> {
+async function assertOpenBill(db: Db, actor: Actor, billId: number): Promise<{ member_id: number | null }> {
   // FOR UPDATE: a line must not slip into a bill that a concurrent payment is settling.
-  const bill = await db.one('SELECT status FROM bills WHERE id = ? AND store_id = ? FOR UPDATE', [billId, actor.storeId]);
+  const bill = await db.one('SELECT status, member_id FROM bills WHERE id = ? AND store_id = ? FOR UPDATE', [billId, actor.storeId]);
   if (!bill) throw new DomainError('bill not found', 404);
   if (bill.status !== 'open') throw new DomainError(`bill is ${bill.status}`, 409);
+  return bill;
 }
 
-export async function addLine(db: Db, actor: Actor, billId: number, input: { productId: number; qty: number; gift?: boolean; reason?: string }): Promise<number> {
+export interface LineInput { productId: number; qty: number; gift?: boolean; reason?: string; weightG?: number }
+
+/**
+ * Adds a line at today's price for this bill (member price and running promotions included). Items sold by weight take
+ * qty 1 plus weightG, and the line carries the price of that portion. labelPrice is the price printed on a scale label;
+ * it is only ever passed by the barcode scanner, never taken from a request body.
+ */
+export async function addLine(db: Db, actor: Actor, billId: number, input: LineInput, labelPrice?: number): Promise<number> {
   require_(actor, 'order.add');
   if (!Number.isInteger(input.qty) || input.qty <= 0 || input.qty > MAX_LINE_QTY) throw new DomainError(`qty must be an integer from 1 to ${MAX_LINE_QTY}`, 422);
   if (!isId(input.productId)) throw new DomainError('productId is required', 422);
+  if (input.weightG != null && (!Number.isInteger(input.weightG) || input.weightG <= 0 || input.weightG > MAX_WEIGHT_G)) throw new DomainError(`weightG must be whole grams from 1 to ${MAX_WEIGHT_G}`, 422);
   if (input.gift) {
     require_(actor, 'order.gift');
     if (!input.reason) throw new DomainError('gift requires a reason', 422);
   }
   return db.tx(async (t) => {
-    await assertOpenBill(t, actor, billId);
+    const bill = await assertOpenBill(t, actor, billId);
     const p = await t.one('SELECT * FROM products WHERE id = ? AND store_id = ? AND active', [input.productId, actor.storeId]);
     if (!p) throw new DomainError('product not found', 404);
+    const weighed = p.unit === 'kg';
+    if (weighed && (input.weightG == null || input.qty !== 1)) throw new DomainError('this item is sold by weight: send qty 1 and weightG', 422);
+    if (!weighed && input.weightG != null) throw new DomainError('weightG is only for items sold by weight', 422);
+    let price = { unitPrice: p.price, note: null as string | null };
+    if (labelPrice != null) price = { unitPrice: labelPrice, note: 'label' };
+    else if (!input.gift) price = await priceFor(t, p, bill.member_id != null);
+    const unitPrice = weighed && labelPrice == null ? linePrice(price.unitPrice, input.weightG!) : price.unitPrice;
     const lineId = await t.insert(
-      `INSERT INTO bill_lines (bill_id, product_id, name, qty, unit_price, kind, reason, waiter_id, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?)`, [billId, p.id, p.name, input.qty, p.price, input.gift ? 'gift' : 'sale', input.reason ?? null, actor.id, Date.now()]);
+      `INSERT INTO bill_lines (bill_id, product_id, name, qty, unit_price, kind, reason, waiter_id, created_at, weight_g, price_note)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [billId, p.id, p.name, input.qty, unitPrice, input.gift ? 'gift' : 'sale', input.reason ?? null, actor.id, Date.now(), input.weightG ?? null, price.note]);
     if (input.gift) await audit(t, whoOf(actor), 'order.gift', 'bill_line', lineId, { billId, productId: p.id, qty: input.qty, reason: input.reason });
     return lineId;
+  });
+}
+
+/**
+ * Puts a member on an open bill (a shopper shows their membership after the first items were scanned) and lowers any
+ * line that is now cheaper for members. Prices never go up here, and scale-label prices stay as printed.
+ */
+export async function attachMember(db: Db, actor: Actor, billId: number, phone: string): Promise<void> {
+  require_(actor, 'order.add');
+  await db.tx(async (t) => {
+    const bill = await assertOpenBill(t, actor, billId);
+    if (bill.member_id != null) throw new DomainError('this bill already has a member', 409);
+    const memberId = await getOrCreateMember(t, actor.tenantId, phone);
+    await t.run('UPDATE bills SET member_id = ? WHERE id = ?', [memberId, billId]);
+    const lines = await t.all(
+      `SELECT p.*, l.id AS line_id, l.unit_price AS line_price, l.weight_g FROM bill_lines l JOIN products p ON p.id = l.product_id
+       WHERE l.bill_id = ? AND l.status = 'active' AND l.kind = 'sale' AND COALESCE(l.price_note, '') <> 'label'`, [billId]);
+    for (const l of lines) {
+      const price = await priceFor(t, l, true);
+      const unitPrice = l.weight_g != null ? linePrice(price.unitPrice, l.weight_g) : price.unitPrice;
+      if (unitPrice < l.line_price) await t.run('UPDATE bill_lines SET unit_price = ?, price_note = ? WHERE id = ?', [unitPrice, price.note, l.line_id]);
+    }
+    await audit(t, whoOf(actor), 'bill.member', 'bill', billId, { memberId });
   });
 }
 
@@ -156,13 +234,15 @@ export async function settleIfPaid(db: Db, actorId: number | null, billId: numbe
       // A stash retrieval is a fraction of a bottle already stored (and already off the shelf), and its product may belong to
       // another store after a stash transfer; counting it as qty 1 here would drain whole bottles of the wrong store's stock.
       if (l.track_stock && !String(l.reason ?? '').startsWith('stash:')) {
-        await t.run('UPDATE products SET stock = stock - ? WHERE id = ?', [l.qty, l.product_id]);
-        await t.run('INSERT INTO stock_movements (store_id, product_id, delta, reason, actor_id, ts) VALUES (?,?,?,?,?,?)', [bill.store_id, l.product_id, -l.qty, `sale bill ${billId}`, actorId, Date.now()]);
+        // Items sold by weight keep their stock in grams.
+        const used = l.weight_g ?? l.qty;
+        await t.run('UPDATE products SET stock = stock - ? WHERE id = ?', [used, l.product_id]);
+        await t.run('INSERT INTO stock_movements (store_id, product_id, delta, reason, actor_id, ts) VALUES (?,?,?,?,?,?)', [bill.store_id, l.product_id, -used, `sale bill ${billId}`, actorId, Date.now()]);
       }
     }
     await writeCommission(t, bill, lines);
     await t.run("UPDATE bills SET status = 'settled', closed_at = ? WHERE id = ?", [Date.now(), billId]);
-    await t.run("UPDATE dining_tables SET status = 'free' WHERE id = ?", [bill.table_id]);
+    if (bill.table_id) await t.run("UPDATE dining_tables SET status = 'free' WHERE id = ?", [bill.table_id]);
     if (bill.booking_id) await t.run("UPDATE bookings SET status = 'redeemed' WHERE id = ?", [bill.booking_id]);
     const tenant = await t.one('SELECT tenant_id FROM stores WHERE id = ?', [bill.store_id]);
     await audit(t, { tenantId: tenant.tenant_id, storeId: bill.store_id, actorId }, 'bill.settle', 'bill', billId, { total: tot.total });
@@ -214,6 +294,7 @@ export async function transferTable(db: Db, actor: Actor, billId: number, toTabl
     const bill = await t.one("SELECT * FROM bills WHERE id = ? AND store_id = ? FOR UPDATE", [billId, actor.storeId]);
     if (!bill) throw new DomainError("bill not found", 404);
     if (bill.status !== "open") throw new DomainError(`bill is ${bill.status}`, 409);
+    if (bill.table_id == null) throw new DomainError("this sale is not on a table", 409);
     if (bill.table_id === toTableId) throw new DomainError("already on that table", 409);
     const to = await t.one("SELECT * FROM dining_tables WHERE id = ? AND store_id = ? AND active FOR UPDATE", [toTableId, actor.storeId]);
     if (!to) throw new DomainError("table not found", 404);

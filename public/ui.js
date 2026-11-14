@@ -105,6 +105,7 @@ function readField(form, f) {
       return v;
     }
     case 'qty': {
+      if (!el.value.trim()) return null;
       const v = parseMilli(el.value);
       if (Number.isNaN(v)) throw new Error(t('err.badQty'));
       return v;

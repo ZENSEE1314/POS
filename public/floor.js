@@ -136,6 +136,7 @@ export function mountFloor(root) {
     },
     input: billActions.handlers.input,
     change: billActions.handlers.change,
+    submit: billActions.handlers.submit,
   });
 
   init().catch(notifyError);

@@ -7,7 +7,10 @@ import type { Db } from './db.ts';
 import { audit, DomainError } from './db.ts';
 import { actorFromToken, can, login, require_, switchStore, whoOf } from './auth.ts';
 import type { Actor } from './auth.ts';
-import { addLine, getBill, openTable, payrollSummary, setDiscount, settleIfPaid, transferTable, voidLine } from './bills.ts';
+import { addLine, attachMember, getBill, listOpenTableless, openCounterSale, openTable, payrollSummary, setDiscount, settleIfPaid, transferTable, voidLine } from './bills.ts';
+import { businessOf, requireModule, updateBusiness } from './business.ts';
+import { scanCode } from './retail.ts';
+import { registerStockRoutes } from './stock-routes.ts';
 import { expireStash, lookupStash, retrieveWine, storeWine, transferStash } from './stash.ts';
 import { cancelBooking, confirmBooking, createBooking, ingestDouyinBooking, listBookings, liveVoucherVerifier, mockVoucherVerifier, redeemVoucher, verifyDouyinSignature } from './bookings.ts';
 import type { DouyinBookingEvent } from './bookings.ts';
@@ -175,7 +178,10 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
     actor,
     store: await db.one('SELECT id, name, code FROM stores WHERE id = ?', [actor.storeId]),
     company: await db.one('SELECT name, code FROM tenants WHERE id = ?', [actor.tenantId]),
+    business: await businessOf(db, actor.tenantId),
   }));
+  route('GET', '/api/business', true, ({ db, actor }) => businessOf(db, actor.tenantId));
+  route('PATCH', '/api/business', true, ({ db, actor, body }) => updateBusiness(db, actor, body));
   route('POST', '/api/switch-store', true, async ({ db, actor, token, body }) => ({ actor: await switchStore(db, token, actor, num(body.storeId)) }));
 
   // ---- floor ----
@@ -218,7 +224,18 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
   // ---- bills ----
   route('POST', '/api/bills', true, async ({ db, actor, body }) => ({ billId: await openTable(db, actor, body) }));
   route('GET', '/api/bills/:id', true, ({ db, actor, params }) => getBill(db, actor, num(params[0])));
-  route('POST', '/api/bills/:id/lines', true, async ({ db, actor, params, body }) => ({ lineId: await addLine(db, actor, num(params[0]), body) }));
+  route('POST', '/api/bills/:id/lines', true, async ({ db, actor, params, body }) => ({
+    lineId: await addLine(db, actor, num(params[0]), { productId: body.productId, qty: body.qty, gift: body.gift, reason: body.reason, weightG: body.weightG }),
+  }));
+  route('POST', '/api/bills/:id/scan', true, ({ db, actor, params, body }) => scanCode(db, actor, num(params[0]), body.code, body.qty === undefined ? 1 : num(body.qty)));
+  route('POST', '/api/bills/:id/member', true, async ({ db, actor, params, body }) => {
+    await attachMember(db, actor, num(params[0]), cleanPhone(body.phone));
+    return { ok: true };
+  });
+  route('GET', '/api/counter-sales', true, ({ db, actor }) => listOpenTableless(db, actor));
+  route('POST', '/api/counter-sales', true, async ({ db, actor, body }) => ({
+    billId: await openCounterSale(db, actor, { phone: body.phone || undefined, repId: body.repId == null ? undefined : num(body.repId) }),
+  }));
   route('POST', '/api/bills/:id/lines/:lid/void', true, async ({ db, actor, params, body }) => {
     await voidLine(db, actor, num(params[0]), num(params[1]), String(body.reason ?? ''));
     return { ok: true };
@@ -257,10 +274,15 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
   });
 
   // ---- stash ----
-  route('POST', '/api/stash', true, ({ db, actor, body }) => storeWine(db, actor, body));
-  route('GET', '/api/stash', true, ({ db, actor, query }) => lookupStash(db, actor, query.get('q') ?? ''));
-  route('POST', '/api/stash/:id/retrieve', true, ({ db, actor, params, body }) => retrieveWine(db, actor, { stashId: num(params[0]), qtyMilli: num(body.qtyMilli), billId: num(body.billId) }));
+  const stashOn = (actor: Actor) => requireModule(db, actor.tenantId, 'stash');
+  route('POST', '/api/stash', true, async ({ db, actor, body }) => { await stashOn(actor); return storeWine(db, actor, body); });
+  route('GET', '/api/stash', true, async ({ db, actor, query }) => { await stashOn(actor); return lookupStash(db, actor, query.get('q') ?? ''); });
+  route('POST', '/api/stash/:id/retrieve', true, async ({ db, actor, params, body }) => {
+    await stashOn(actor);
+    return retrieveWine(db, actor, { stashId: num(params[0]), qtyMilli: num(body.qtyMilli), billId: num(body.billId) });
+  });
   route('POST', '/api/stash/:id/transfer', true, async ({ db, actor, params, body }) => {
+    await stashOn(actor);
     await transferStash(db, actor, num(params[0]), num(body.toStoreId));
     return { ok: true };
   });
@@ -336,6 +358,8 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
   route('GET', '/platform/ops', false, ({ db, query }) => recentOps(db, num(query.get('limit') ?? 200), query.get('level') ?? undefined));
   route('GET', '/platform/metrics', false, () => metrics.snapshot());
   route('POST', '/platform/selfheal', false, ({ db }) => selfHeal(db));
+
+  registerStockRoutes(route, { num });
 
   registerGuestRoutes(route, {
     db, payProviders: providers, baseUrl, isMock, num, sms: buildSms(env), smsPerHour: env.GUEST_SMS_PER_HOUR ? Number(env.GUEST_SMS_PER_HOUR) : undefined,

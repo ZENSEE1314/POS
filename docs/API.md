@@ -14,15 +14,34 @@ Roles: `host`, `waiter`, `cashier`, `manager`, `finance`, `owner`. `owner` and `
 | `POST /api/signup` | `{name, code, storeName, ownerName, ownerUsername, ownerPin}` (only if `signupOpen`) |
 
 ## Session
-`POST /api/logout` · `GET /api/me` -> `{actor, store, company}` · `POST /api/switch-store {storeId}` (owner/finance)
+`POST /api/logout` · `GET /api/me` -> `{actor, store, company, business}` · `POST /api/switch-store {storeId}` (owner/finance)
+
+## Business type and modules
+- `GET /api/business` -> `{type: bar|restaurant|cafe|retail|pet|salon|other, modules: {tables, minSpend, reps, stash, bookings, kitchen, counter, barcode, purchasing, promotions, guestApp, delivery}, scaleMode: price|weight}`
+- `PATCH /api/business {type?, modules?: {name: bool}, scaleMode?, applyGuestPreset?}` (owner). A new type resets modules to its preset, then `modules` is applied on top.
+- A route of a switched-off module answers `404` (stash, counter sales, scanning, purchasing, promotions, shop orders).
+
+## Counter sales, scanning, member prices
+- `GET /api/counter-sales` -> open bills without a table (counter, pickup, delivery) with `total` · `POST /api/counter-sales {phone?, repId?}` -> `{billId}` (counter module)
+- `POST /api/bills/:id/scan {code, qty?}` -> `{lineId, productId}` or `{needsWeight: true, product}` (barcode module). Scale labels: see README.
+- `POST /api/bills/:id/lines` also takes `weightG` (whole grams, required with `qty: 1` for items sold per kg).
+- `POST /api/bills/:id/member {phone}` puts a member on an open bill and lowers lines to member prices.
+- Bill lines carry `weight_g` and `price_note` (`member`, `label`, `promo:<name>`). Bills carry `channel` (`table`, `counter`, `pickup`, `delivery`); `table_id` is null for the last three.
+
+## Purchasing and promotions (manager, owner)
+- `GET/POST /api/suppliers {name, contact?, phone?, note?}`, `PATCH /api/suppliers/:id` (suppliers are company-wide)
+- `GET /api/purchase-orders[?status=]` · `POST /api/purchase-orders {supplierId, note?, lines: [{productId, qty, unitCost}]}` (grams and per-kg cost for items sold by weight)
+- `POST /api/purchase-orders/:id/order` · `/cancel` · `/receive {received?: {lineId: qty}}` (default: as ordered)
+- `GET /api/low-stock` -> items at or below `reorderLevel`, with `suggest`
+- `GET/POST /api/promotions {name, productId? | category?, kind: price|percent, value, membersOnly?, startsAt, endsAt}`, `PATCH /api/promotions/:id`
 
 ## Floor (current store)
 - `GET /api/tables[?all=1]` -> rows with `bill_id` when occupied. `POST /api/tables {name, zone?, kind: bar|booth|room, capacity?, minSpend?, tableFee?}` and `PATCH /api/tables/:id` (manager, owner)
-- `GET /api/products[?all=1]`. `POST /api/products {name, nameEn?, category?, price, stock?, trackStock?, station?}`, `PATCH /api/products/:id`, `POST /api/products/:id/stock {delta, reason}` (manager, owner)
+- `GET /api/products[?all=1]`. `POST /api/products {name, nameEn?, category?, price, stock?, trackStock?, station?, barcode?, unit?: each|kg, cost?, memberPrice?, reorderLevel?}`, `PATCH /api/products/:id`, `POST /api/products/:id/stock {delta, reason}` (manager, owner)
 - `GET/POST /api/commission-rules {role: sales|waiter, category?, productId?, bps, fixed?}`, `DELETE /api/commission-rules/:id` (write: manager, owner)
 
 ## Bills
-- `POST /api/bills {tableId, repId?, phone?, bookingId?}` -> `{billId}`. A sales rep is required (or comes from the booking). Rep must work at this store.
+- `POST /api/bills {tableId, repId?, phone?, bookingId?}` -> `{billId}`. With the reps module a sales rep is required (or comes from the booking); without it the person opening the table owns the bill. Rep must work at this store.
 - `GET /api/bills/:id` -> `{bill, lines, payments, totals:{subtotal, minSpendTopUp, tableFee, discount, total, paid, due}}`
 - `POST /api/bills/:id/lines {productId, qty, gift?, reason?}` (gift: manager/owner + reason)
 - `POST /api/bills/:id/lines/:lid/void {reason}` (manager/owner) · `POST /api/bills/:id/discount {amount, reason}` (manager/owner)
@@ -61,6 +80,9 @@ Webhook `POST /webhooks/douyin` (HMAC `x-douyin-signature`), `POST /webhooks/wec
 
 ## Customer app (`/api/guest/*`)
 Guest tokens are separate from staff tokens (`Authorization: Bearer <guest token>`, 30 days). Public routes need no token.
+- `GET /api/guest/venue/:company` also returns `business`, `orderAhead`, `bookings`, `tables`; menu products carry `byWeight`.
+- Order ahead: `POST /api/guest/shop-orders {company, store, mode: pickup|delivery, items, note?, address? (delivery), pickupAt?}` (verified phone; delivery module; no items sold by weight) · `POST /api/guest/orders/:id/pay {method, amount?}` once accepted. Orders carry `mode, address, pickupAt, fulfilStatus, bill: {id, status, due}`.
+- Staff: `POST /api/guest-orders/:id/fulfil {step}`: pickup `ready`, `done`; delivery `out`, `done`.
 - Public: `GET /api/guest/config` -> `{mock, login:{wechat,alipay,douyin,phone}, payments:{wechat,alipay}}` · `GET /api/guest/venue/:company` · `GET /api/guest/venue/:company/:store/menu` · `GET /api/guest/table/:qrToken`
 - Provider sign-in: `GET /api/guest/auth/:provider/start?return=/g/...` (302 to the provider) -> provider -> `GET /api/guest/auth/:provider/callback` (302 to `return#login=<one-time code>` or `#loginError=`) -> `POST /api/guest/session {code}` -> `{token, customer}`. State and code are single-use; `return` must be a `/g/` path.
 - Phone: `POST /api/guest/otp {phone}` (mainland mobile; 1 per minute per phone, 10 per hour per IP; `devCode` only in mock mode) · `POST /api/guest/login/phone {phone, code}` · `POST /api/guest/me/phone {phone, code}` (verify/link; merges into the account that already owns the phone). 5 wrong guesses kill a code.

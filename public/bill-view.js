@@ -5,6 +5,7 @@ import { html, fmtMoney, fmtDateTime, productName, byId, raw } from './util.js';
 import { emptyState, skeleton, badge, pressed } from './ui.js';
 import { qrSvg } from './qr.js';
 import { syncState } from './offline/index.js';
+import { hasModule, isWeighed, fmtKg, fmtStock } from './business.js';
 
 const ONLINE_METHODS = ['wechat', 'alipay'];
 const INSTANT_METHODS = ['cash', 'member', 'credit'];
@@ -23,8 +24,8 @@ export function productTiles(S) {
     const soldOut = p.track_stock && p.stock <= 0;
     return html`<button type="button" class="product" data-action="addItem" data-id="${p.id}" ${soldOut ? 'disabled' : ''}>
       <span class="product__name">${productName(p)}</span>
-      <span class="product__price">${fmtMoney(p.price)}</span>
-      <span class="product__stock">${soldOut ? t('floor.soldOut') : p.track_stock ? t('floor.stock', { n: p.stock }) : ''}</span>
+      <span class="product__price">${isWeighed(p) ? t('price.perKg', { price: fmtMoney(p.price) }) : fmtMoney(p.price)}</span>
+      <span class="product__stock">${soldOut ? t('floor.soldOut') : p.track_stock ? t('floor.stock', { n: fmtStock(p) }) : ''}</span>
     </button>`;
   })}`;
 }
@@ -35,6 +36,10 @@ function addPanel(S) {
   const categories = [...new Set(S.products.map((p) => p.category))];
   return html`<section class="bill__section" aria-labelledby="add-title">
     <h3 id="add-title" class="section-title">${t('floor.addItems')}</h3>
+    ${hasModule('barcode') && html`<form class="scan-bar" data-form="scan" novalidate>
+      <div class="field field--grow"><label for="scan">${t('counter.scan')}</label>
+        <input id="scan" name="code" data-action="scanField" inputmode="numeric" autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="done"></div>
+      <button type="submit" class="btn btn--primary">${t('counter.scanGo')}</button></form>`}
     <div class="add-bar">
       <div class="field field--qty"><label for="qty">${t('floor.qty')}</label>
         <input id="qty" type="number" min="1" max="99" step="1" value="${S.qty}" data-action="setQty"></div>
@@ -49,6 +54,12 @@ function addPanel(S) {
   </section>`;
 }
 
+const priceNote = (note) => {
+  if (!note) return '';
+  if (note.startsWith('promo:')) return badge(t('note.promo', { name: note.slice('promo:'.length) }), 'success', '%');
+  return badge(tOr(`note.${note}`, note), 'success', '');
+};
+
 function lineHtml(l, products, open) {
   const p = products.get(l.product_id);
   const name = p ? productName(p) : l.name;
@@ -56,13 +67,15 @@ function lineHtml(l, products, open) {
   const tags = [
     l.kind === 'gift' && badge(t('floor.giftTag'), 'warning', '♥'),
     isVoid && badge(t('floor.voidTag'), 'danger', '✕'),
+    priceNote(l.price_note),
   ];
+  const qtyText = l.weight_g ? `${fmtKg(l.weight_g)} kg` : `${l.qty} × ${fmtMoney(l.unit_price)}`;
   return html`<li class="line ${isVoid ? 'line--void' : ''}">
     <div class="line__main"><span class="line__name">${name}</span> ${tags}
       ${l.reason && html`<span class="muted line__reason">${l.reason}</span>`}</div>
-    <div class="line__nums"><span>${l.qty} × ${fmtMoney(l.unit_price)}</span><strong>${fmtMoney(l.kind === 'gift' ? 0 : l.qty * l.unit_price)}</strong></div>
+    <div class="line__nums"><span>${qtyText}</span><strong>${fmtMoney(l.kind === 'gift' ? 0 : l.qty * l.unit_price)}</strong></div>
     ${open && !isVoid && html`<div class="line__tools">
-      ${can('order.add') && l.kind === 'sale' && html`<button type="button" class="btn btn--small btn--ghost" data-action="plusLine" data-id="${l.product_id}" aria-label="${t('floor.addOne', { name })}">+1</button>`}
+      ${can('order.add') && l.kind === 'sale' && !l.weight_g && html`<button type="button" class="btn btn--small btn--ghost" data-action="plusLine" data-id="${l.product_id}" aria-label="${t('floor.addOne', { name })}">+1</button>`}
       ${can('order.void') && html`<button type="button" class="btn btn--small btn--ghost" data-action="voidLine" data-id="${l.id}" aria-label="${t('floor.void')} ${name}">${t('floor.void')}</button>`}
     </div>`}
   </li>`;
@@ -133,14 +146,18 @@ export function billHtml(S) {
   const table = S.tables.find((x) => x.id === bill.table_id);
   const rep = S.staff.find((s) => s.id === bill.rep_id);
   const products = byId(S.products);
+  const onTable = bill.table_id != null;
+  const title = onTable ? table?.name ?? `#${bill.table_id}` : `${t(`channel.${bill.channel}`)} #${bill.id}`;
   return html`<header class="bill__head">
-      <button type="button" class="btn btn--small btn--ghost bill__back" data-action="backToBoard">↑ ${t('floor.tables')}</button>
-      <div><h2 class="bill__title">${table?.name ?? `#${bill.table_id}`}</h2>
-        <p class="muted">${t(bill.id < 0 ? 'floor.offlineBillMeta' : 'floor.billMeta', { id: bill.id, time: fmtDateTime(bill.opened_at), rep: rep?.name ?? `#${bill.rep_id}` })}</p></div>
+      <button type="button" class="btn btn--small btn--ghost bill__back" data-action="backToBoard">↑ ${onTable ? t('floor.tables') : t('counter.open')}</button>
+      <div><h2 class="bill__title">${title}</h2>
+        ${bill.member_phone && html`<p class="muted">${t('counter.memberOn', { phone: bill.member_phone })}</p>`}
+        <p class="muted">${t(bill.id < 0 ? 'floor.offlineBillMeta' : hasModule('reps') ? 'floor.billMeta' : 'counter.billMeta', { id: bill.id, time: fmtDateTime(bill.opened_at), rep: rep?.name ?? `#${bill.rep_id}` })}</p></div>
       ${open ? badge(t('floor.billOpen'), 'warning', '●') : badge(t('floor.billSettled'), 'success', '✓')}
     </header>
     <div class="row bill__tools">
-      ${open && html`<button type="button" class="btn btn--small btn--ghost" data-action="transfer">${t('floor.transfer')}</button>`}
+      ${open && onTable && html`<button type="button" class="btn btn--small btn--ghost" data-action="transfer">${t('floor.transfer')}</button>`}
+      ${open && !bill.member_id && can('order.add') && html`<button type="button" class="btn btn--small btn--ghost" data-action="attachMember">${t('counter.member')}</button>`}
       ${open && can('bill.discount') && html`<button type="button" class="btn btn--small btn--ghost" data-action="discount">${t('floor.setDiscount')}</button>`}
       <button type="button" class="btn btn--small btn--ghost" data-action="printReceipt">${t('print.receipt')}</button>
     </div>

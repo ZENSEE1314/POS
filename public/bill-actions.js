@@ -5,6 +5,8 @@ import { parseFen, fmtMoney } from './util.js';
 import { formDialog, confirmDialog, toast } from './ui.js';
 import { S } from './floor-state.js';
 import { printReceiptAuto, printReceiptManual, queueTicketLine } from './print/hooks.js';
+import { isWeighed } from './business.js';
+import { productName } from './util.js';
 
 const POLL_MS = 2000;
 const MAX_QTY = 99;
@@ -45,8 +47,28 @@ export function createBillActions(ctx) {
     ctx.renderBill();
   };
 
+  /** Asks for the weight of an item sold by weight; resolves grams, or null when cancelled. */
+  async function askWeight(product) {
+    let grams = null;
+    const ok = await formDialog({
+      title: t('weigh.title', { name: productName(product) }), intro: t('weigh.hint', { price: fmtMoney(product.price) }), submit: 'weigh.add',
+      fields: [{ name: 'kg', label: t('weigh.kg'), type: 'qty', required: true }],
+      onSubmit: async (v) => {
+        if (!(v.kg > 0)) throw new Error(t('err.badQty'));
+        grams = v.kg;
+      },
+    });
+    return ok ? grams : null;
+  }
+
   async function addLine(productId, qty, gift) {
+    const product = S.products.find((p) => p.id === productId);
     const body = { productId, qty };
+    if (isWeighed(product)) {
+      const grams = await askWeight(product);
+      if (grams === null) return;
+      Object.assign(body, { qty: 1, weightG: grams });
+    }
     if (gift) {
       let reason = '';
       const ok = await formDialog({
@@ -57,14 +79,15 @@ export function createBillActions(ctx) {
       Object.assign(body, { gift: true, reason });
     }
     await post(billPath('/lines'), body);
-    queueTicketLine({ billId: S.billId, product: S.products.find((p) => p.id === productId), qty, gift });
+    queueTicketLine({ billId: S.billId, product, qty: body.qty, gift });
     S.qty = 1;
     S.gift = false;
     await afterChange();
   }
 
   async function settleResult(r) {
-    toast(r.settled ? t('floor.settledToast') : t('floor.paidToast', { amount: fmtMoney(r.paid ?? r.amount) }), 'success');
+    const settledText = S.bill?.bill.table_id == null ? t('counter.settled') : t('floor.settledToast');
+    toast(r.settled ? settledText : t('floor.paidToast', { amount: fmtMoney(r.paid ?? r.amount) }), 'success');
     await afterChange(true);
   }
 
@@ -75,15 +98,36 @@ export function createBillActions(ctx) {
     return fen === null ? undefined : fen;
   };
 
+  async function scan(form) {
+    const input = form.elements.code;
+    const code = input.value.trim();
+    if (!code) return;
+    input.value = '';
+    const qty = clampQty(S.qty);
+    const r = await post(billPath('/scan'), { code, qty });
+    if (r.needsWeight) {
+      input.blur();
+      const grams = await askWeight({ ...r.product, name_en: r.product.nameEn });
+      if (grams === null) return;
+      await post(billPath('/lines'), { productId: r.product.id, qty: 1, weightG: grams });
+    }
+    const product = S.products.find((p) => p.id === (r.productId ?? r.product.id));
+    if (product) queueTicketLine({ billId: S.billId, product, qty: isWeighed(product) ? 1 : qty, gift: false });
+    S.qty = 1;
+    await afterChange();
+    document.getElementById('scan')?.focus();
+  }
+
   return {
     stopPolling,
     handlers: {
+      submit: { scan },
       click: {
         addItem: (el) => addLine(Number(el.dataset.id), clampQty(S.qty), S.gift),
         plusLine: (el) => addLine(Number(el.dataset.id), 1, false),
         setCategory: (el) => { S.category = el.dataset.cat; ctx.renderBill(); },
         printReceipt: printReceiptManual,
-        backToBoard: () => document.getElementById('board').scrollIntoView({ behavior: 'smooth' }),
+        backToBoard: () => document.getElementById('board')?.scrollIntoView({ behavior: 'smooth' }),
         voidLine: (el) => formDialog({
           title: t('floor.void'), fields: [reasonField(t('floor.reason'))], submit: 'floor.void', danger: true,
           onSubmit: async (v) => { await post(billPath(`/lines/${el.dataset.id}/void`), { reason: v.reason }); await afterChange(); },
@@ -119,6 +163,11 @@ export function createBillActions(ctx) {
           await pollPending();
         },
         dismissPending: () => { stopPolling(); S.pending = null; ctx.renderBill(); },
+        attachMember: () => formDialog({
+          title: t('counter.memberTitle'), intro: t('counter.memberHint'), submit: 'common.save',
+          fields: [{ name: 'phone', label: t('floor.phone'), type: 'tel', required: true }],
+          onSubmit: async (v) => { await post(billPath('/member'), { phone: v.phone }); await afterChange(true); },
+        }),
         redeem: () => formDialog({
           title: t('floor.redeem'), submit: 'floor.redeemGo',
           fields: [{ name: 'code', label: t('floor.voucherCode'), type: 'text', required: true }],

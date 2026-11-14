@@ -7,13 +7,33 @@
 //   /g/<company>/<store>/menu        browse the menu
 //   /g/<company>/<store>/book        book a table
 //   /g/<company>/<store>/t/<token>   the table QR: order, my orders, bill and pay
-import { t, getLang, setLang, loadLang, LANGS } from './i18n.js';
+import { t, tOr, getLang, setLang, loadLang, LANGS, addStrings } from './i18n.js';
 import { html, setHtml, session, get, loadToken, toastError, skeleton } from './core.js';
 import { finishProviderLogin, loadCustomer } from './login.js';
 import { mountMenuBrowse, mountTable, waitForPayment } from './table.js';
 import { mountAccount, mountBooking } from './account.js';
 import { captureReferral, claimPendingReferral, mountEvents, mountPets, mountRewards, mountSpin, mountSupport } from './extras.js';
 import { mountGames } from './games.js';
+import { mountShopOrder, mountMyOrders } from './shop.js';
+
+addStrings({
+  en: {
+    'venue.menu.other': 'Menu', 'venue.menuSub.other': 'What we have and prices',
+    'venue.menu.retail': 'Products', 'venue.menuSub.retail': 'What is in stock and prices', 'venue.menu.pet': 'Products and services', 'venue.menuSub.pet': 'Food, treats, care and prices',
+    'venue.menu.salon': 'Services', 'venue.menuSub.salon': 'Treatments and prices',
+    'venue.book.other': 'Book a table', 'venue.bookSub.other': 'Reserve for today or another day',
+    'venue.eventsSub.other': 'Events, offers and special days', 'venue.accountSub.other': 'Wallet balance, orders and bookings',
+    'venue.book.salon': 'Book an appointment', 'venue.bookSub.salon': 'Pick a day and time', 'venue.book.pet': 'Book a visit', 'venue.bookSub.pet': 'Cafe visit, grooming or care',
+  },
+  zh: {
+    'venue.menu.other': '菜单', 'venue.menuSub.other': '品类与价格',
+    'venue.menu.retail': '商品', 'venue.menuSub.retail': '在售商品与价格', 'venue.menu.pet': '商品与服务', 'venue.menuSub.pet': '主粮、零食、护理与价格',
+    'venue.menu.salon': '服务项目', 'venue.menuSub.salon': '项目与价格',
+    'venue.book.other': '预订座位', 'venue.bookSub.other': '今天或其他日期',
+    'venue.eventsSub.other': '活动、优惠与特别日子', 'venue.accountSub.other': '储值余额、订单与预约',
+    'venue.book.salon': '预约', 'venue.bookSub.salon': '选择日期和时间', 'venue.book.pet': '预约到店', 'venue.bookSub.pet': '咖啡馆、洗护或寄养',
+  },
+});
 
 /** Venue-wide screens; these words are never store codes. */
 const EXTRAS = {
@@ -23,6 +43,7 @@ const EXTRAS = {
   games: (root) => mountGames(root),
   pets: (root, ctx) => mountPets(root, ctx),
   support: (root, ctx) => mountSupport(root, ctx),
+  orders: (root, ctx) => mountMyOrders(root, ctx),
 };
 
 const appEl = document.getElementById('app');
@@ -97,32 +118,38 @@ const tile = (href, mark, title, sub) => html`<a class="g-tile" href="${href}" d
 function venueHome(root, v) {
   const company = v.company.code;
   setHtml(root, html`<section class="g-hero"><p class="g-hero__eyebrow">${t('venue.welcome')}</p><h1 class="g-hero__title">${v.company.name}</h1>
-      <p class="g-hero__text">${t('venue.scanHint')}</p></section>
+      <p class="g-hero__text">${heroHint(v)}</p></section>
     ${v.stores.length > 1 && html`<h2 class="g-cat">${t('venue.pickStore')}</h2>`}
     <div class="g-actions">${v.stores.length > 1
       ? v.stores.map((s) => tile(`/g/${enc(company)}/${enc(s.code)}`, '✦', s.name, t('venue.storeSub')))
-      : storeTiles(company, v.stores[0])}</div>
-    <div class="g-actions">${extraTiles(company, v.features ?? {})}</div>`);
+      : storeTiles(company, v.stores[0], v)}</div>
+    <div class="g-actions">${extraTiles(company, v.features ?? {}, v)}</div>`);
 }
 
-const storeTiles = (company, s) => [
-  tile(`/g/${enc(company)}/${enc(s.code)}/menu`, '≡', t('venue.menu'), t('venue.menuSub')),
-  tile(`/g/${enc(company)}/${enc(s.code)}/book`, '◷', t('venue.book'), t('venue.bookSub')),
-];
+/** Bars keep their own words; other businesses get wording for their kind (menu vs products, booking vs appointment). */
+const word = (v, key) => (v.business && v.business !== 'bar' ? tOr(`${key}.${v.business}`, tOr(`${key}.other`, t(key))) : t(key));
 
-const extraTiles = (company, f) => [
-  f.events && tile(`/g/${enc(company)}/events`, '★', t('venue.events'), t('venue.eventsSub')),
+const storeTiles = (company, s, v) => [
+  v.orderAhead && tile(`/g/${enc(company)}/${enc(s.code)}/order`, '🛍', t('shop.order'), t('shop.orderSub')),
+  tile(`/g/${enc(company)}/${enc(s.code)}/menu`, '≡', word(v, 'venue.menu'), word(v, 'venue.menuSub')),
+  v.bookings !== false && tile(`/g/${enc(company)}/${enc(s.code)}/book`, '◷', word(v, 'venue.book'), word(v, 'venue.bookSub')),
+];
+const heroHint = (v) => (v.tables === false ? '' : t('venue.scanHint'));
+
+const extraTiles = (company, f, v) => [
+  v.orderAhead && tile(`/g/${enc(company)}/orders`, '▤', t('shop.mine'), t('shop.mineSub')),
+  f.events && tile(`/g/${enc(company)}/events`, '★', t('venue.events'), word(v, 'venue.eventsSub')),
   f.loyalty && tile(`/g/${enc(company)}/rewards`, '◆', t('venue.rewards'), t('venue.rewardsSub')),
   f.games && tile(`/g/${enc(company)}/games`, '⚄', t('venue.games'), t('venue.gamesSub')),
   f.pets && tile(`/g/${enc(company)}/pets`, '🐾', t('venue.pets'), t('venue.petsSub')),
   f.support && tile(`/g/${enc(company)}/support`, '✉', t('venue.support'), t('venue.supportSub')),
-  tile(`/g/${enc(company)}/account`, '☺', t('venue.account'), t('venue.accountSub')),
+  tile(`/g/${enc(company)}/account`, '☺', t('venue.account'), word(v, 'venue.accountSub')),
 ];
 
 function storeHome(root, v, store) {
   setHtml(root, html`<section class="g-hero"><p class="g-hero__eyebrow">${v.company.name}</p><h1 class="g-hero__title">${store.name}</h1>
-    <p class="g-hero__text">${t('venue.scanHint')}</p></section><div class="g-actions">${storeTiles(v.company.code, store)}</div>
-    <div class="g-actions">${extraTiles(v.company.code, v.features ?? {})}</div>`);
+    <p class="g-hero__text">${heroHint(v)}</p></section><div class="g-actions">${storeTiles(v.company.code, store, v)}</div>
+    <div class="g-actions">${extraTiles(v.company.code, v.features ?? {}, v)}</div>`);
 }
 
 async function route() {
@@ -158,6 +185,7 @@ async function route() {
     header = { title: store.name, subtitle: v.company.name, company: v.company.code };
     root = frame();
     if (third === 'menu') await mountMenuBrowse(root, { company: v.company.code, store: store.code });
+    else if (third === 'order' && v.orderAhead) cleanup = await mountShopOrder(root, { company: v.company.code, store: store.code, navigate });
     else if (third === 'book') await mountBooking(root, { company: v.company.code, store: store.code, stores: v.stores, navigate });
     else storeHome(root, v, store);
   } catch (e) {

@@ -20,7 +20,7 @@ const categoryLabel = (c) => (c ? tOr(`cat.${c}`, c) : t('cat.none'));
 
 // ---------- menu list (shared by browse and table modes) ----------
 
-function menuHtml(products, { cart, category }) {
+export function menuHtml(products, { cart, category }) {
   if (!products.length) return html`<p class="g-empty">${t('menu.empty')}</p>`;
   const cats = [...new Set(products.map((p) => p.category))];
   const shown = category ? products.filter((p) => p.category === category) : products;
@@ -34,8 +34,9 @@ function menuHtml(products, { cart, category }) {
       const name = productName(p);
       return html`<li class="g-item ${p.soldOut ? 'g-item--out' : ''}">
         <div class="g-item__body"><p class="g-item__name">${name}</p>${productSubName(p) && html`<span class="g-item__sub">${productSubName(p)}</span>`}
-          <p class="g-item__price g-num">${p.soldOut ? t('menu.soldOut') : fmtMoney(p.price)}</p></div>
-        ${cart && !p.soldOut && html`<div class="g-step">
+          <p class="g-item__price g-num">${p.soldOut ? t('menu.soldOut') : p.byWeight ? t('menu.perKg', { price: fmtMoney(p.price) }) : fmtMoney(p.price)}</p>
+          ${cart && p.byWeight && html`<span class="g-item__sub">${t('menu.weighInStore')}</span>`}</div>
+        ${cart && !p.soldOut && !p.byWeight && html`<div class="g-step">
           ${qty > 0 && html`<button type="button" data-dec="${p.id}" aria-label="${t('menu.remove', { name })}">−</button><output aria-live="polite">${qty}</output>`}
           <button type="button" class="g-step__add" data-inc="${p.id}" aria-label="${t('menu.add', { name })}" ${qty >= MAX_QTY ? 'disabled' : ''}>+</button></div>`}
       </li>`;
@@ -219,7 +220,7 @@ export async function mountTable(root, { token, onTitle }) {
         state.tab = 'menu';
         render();
       } else if (el.dataset.pay !== undefined) {
-        await openPay(token, state.bill, info.company.code, async () => { state.justPaid = true; await refresh(); });
+        await openPay(`/api/guest/table/${encodeURIComponent(token)}/pay`, state.bill?.totals.due ?? 0, info.company.code, async () => { state.justPaid = true; await refresh(); });
       }
     } catch (err) {
       toastError(err);
@@ -252,10 +253,10 @@ function readResume() {
   try { return JSON.parse(sessionStorage.getItem(RESUME_KEY) ?? 'null'); } catch { return null; }
 }
 
-function loadCart(key, products) {
+export function loadCart(key, products) {
   try {
     const saved = JSON.parse(sessionStorage.getItem(key) ?? '[]');
-    return new Map(saved.filter(([id, q]) => products.has(id) && !products.get(id).soldOut && Number.isInteger(q) && q > 0 && q <= MAX_QTY));
+    return new Map(saved.filter(([id, q]) => products.has(id) && !products.get(id).soldOut && !products.get(id).byWeight && Number.isInteger(q) && q > 0 && q <= MAX_QTY));
   } catch {
     return new Map();
   }
@@ -364,15 +365,16 @@ function billHtml(bill, signedIn, justPaid) {
 
 // ---------- paying ----------
 
-async function openPay(token, bill, company, onDone) {
-  if (!bill || bill.totals.due <= 0) return;
+/** Pays `due` through payPath (a table's or an order's pay endpoint) with WeChat, Alipay or the member wallet. */
+export async function openPay(payPath, due, company, onDone) {
+  if (due <= 0) return;
   const { payments } = session.config;
   let wallet = null;
   if (session.customer?.phone) {
     try { wallet = (await get(`/api/guest/account/${encodeURIComponent(company)}`)).wallet; } catch { /* the wallet button just stays hidden */ }
   }
   const choice = await sheet(t('pay.title'), (body, close) => {
-    const yuan = (bill.totals.due / 100).toFixed(2);
+    const yuan = (due / 100).toFixed(2);
     setHtml(body, html`<div class="g-field"><label for="amt">${t('pay.amount')}</label>
         <input id="amt" inputmode="decimal" value="${yuan}"><p class="g-hint">${t('pay.amountHint')}</p></div>
       <p class="g-error" role="alert" hidden></p>
@@ -389,16 +391,16 @@ async function openPay(token, bill, company, onDone) {
     body.querySelectorAll('[data-method]').forEach((b) => b.addEventListener('click', () => {
       const amount = parseFen(body.querySelector('#amt').value);
       if (Number.isNaN(amount)) { errorEl.textContent = t('pay.badAmount'); errorEl.hidden = false; return; }
-      close({ method: b.dataset.method, amount: Math.min(amount, bill.totals.due) });
+      close({ method: b.dataset.method, amount: Math.min(amount, due) });
     }));
     body.querySelector('[data-verify]')?.addEventListener('click', () => close({ verify: true }));
   });
   if (!choice) return;
   if (choice.verify) {
-    if (await verifyPhone()) await openPay(token, bill, company, onDone);
+    if (await verifyPhone()) await openPay(payPath, due, company, onDone);
     return;
   }
-  const r = await post(`/api/guest/table/${encodeURIComponent(token)}/pay`, { method: choice.method, amount: choice.amount, returnPath: location.pathname });
+  const r = await post(payPath, { method: choice.method, amount: choice.amount, returnPath: location.pathname });
   if (r.kind === 'done') {
     toast(t('pay.done'), 'success');
     await onDone();

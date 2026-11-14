@@ -14,18 +14,23 @@ import { mountReports } from './reports.js';
 import { mountAdmin } from './admin.js';
 import { mountHq } from './hq.js';
 import { mountGuestOrders, GUEST_ORDERS_CHANGED } from './guest-orders.js';
+import { mountCounter } from './counter.js';
+import { mountStock } from './stock.js';
+import { hasModule, BUSINESS_TYPES, BUSINESS_CHANGED } from './business.js';
 import { initOffline, syncPillHtml, mountSyncPill, openSyncPanel, syncState, syncNow, forgetEverything, offlineSignedIn } from './offline/index.js';
 import { openPrintDialog } from './print/dialog.js';
 import { clearPrintData } from './print/log.js';
 
 const COMPANY_KEY = 'nightpos.company';
-const DEFAULT_VIEW = 'floor';
 const SIGNUP_PIN_MIN = 6;
+// `module`: the tab only shows when the company has that module switched on.
 const TABS = [
-  { id: 'floor', mount: mountFloor },
-  { id: 'orders', mount: mountGuestOrders, perm: 'order.add' },
-  { id: 'bookings', mount: mountBookings },
-  { id: 'stash', mount: mountStash },
+  { id: 'floor', mount: mountFloor, module: 'tables' },
+  { id: 'counter', mount: mountCounter, perm: 'order.add', module: 'counter' },
+  { id: 'orders', mount: mountGuestOrders, perm: 'order.add', module: 'guestApp' },
+  { id: 'bookings', mount: mountBookings, module: 'bookings' },
+  { id: 'stash', mount: mountStash, module: 'stash' },
+  { id: 'stock', mount: mountStock, perm: 'admin.write', module: 'purchasing' },
   { id: 'members', mount: mountMembers },
   { id: 'reports', mount: mountReports, perm: 'audit.read' },
   { id: 'admin', mount: mountAdmin, perm: 'admin.write' },
@@ -37,10 +42,11 @@ let unmountView = null;
 let unmountSyncPill = null;
 let stores = [];
 
-const visibleTabs = () => TABS.filter((tab) => !tab.perm || can(tab.perm));
+const visibleTabs = () => TABS.filter((tab) => (!tab.perm || can(tab.perm)) && (!tab.module || hasModule(tab.module)));
 const currentTabId = () => {
   const id = location.hash.slice(1);
-  return visibleTabs().some((x) => x.id === id) ? id : DEFAULT_VIEW;
+  const tabs = visibleTabs();
+  return tabs.some((x) => x.id === id) ? id : tabs[0].id;
 };
 
 const langToggle = () => html`<div class="lang" role="group" aria-label="${t('lang.label')}">
@@ -102,6 +108,7 @@ const openSignup = () => formDialog({
   intro: t('signup.intro'),
   fields: [
     { name: 'name', label: t('signup.company'), required: true },
+    { name: 'businessType', label: t('biz.signupType'), type: 'select', value: 'bar', options: BUSINESS_TYPES.map((x) => ({ value: x, label: t(`biz.type.${x}`) })) },
     { name: 'code', label: t('signup.code'), required: true, hint: t('signup.codeHint') },
     { name: 'storeName', label: t('signup.store'), required: true },
     { name: 'ownerName', label: t('signup.ownerName'), required: true },
@@ -119,7 +126,7 @@ const openSignup = () => formDialog({
 
 async function loadSession() {
   const me = await get('/api/me');
-  Object.assign(app, { actor: me.actor, store: me.store, company: me.company });
+  Object.assign(app, { actor: me.actor, store: me.store, company: me.company, business: me.business });
   // Head-office data is online-only; an owner who reloads while offline still gets the floor, just without the store switcher.
   stores = can('hq.read') ? await get('/api/hq/stores').catch((e) => { if (e.status === 0) return []; throw e; }) : [];
 }
@@ -178,7 +185,7 @@ const ORDER_BADGE_MS = 20_000;
 function startOrderBadge() {
   stopOrderBadge?.();
   stopOrderBadge = null;
-  if (!can('order.add')) return;
+  if (!can('order.add') || !hasModule('guestApp')) return;
   const tick = async () => {
     const tab = document.querySelector('.tab[data-tab=orders]');
     if (!tab || document.visibilityState !== 'visible' || !syncState().online) return;
@@ -214,7 +221,7 @@ async function enterApp() {
 function showLogin(prefill) {
   stopOrderBadge?.();
   stopOrderBadge = null;
-  Object.assign(app, { actor: null, store: null, company: null });
+  Object.assign(app, { actor: null, store: null, company: null, business: null });
   renderLogin({ company: readStore(localStorage, COMPANY_KEY) ?? '', ...prefill });
 }
 
@@ -262,6 +269,8 @@ async function boot() {
     toast(t('login.expired'), 'error');
   });
   window.addEventListener('hashchange', () => { if (app.actor) mountCurrentView(); });
+  // Modules changed in Admin: rebuild the tabs (a tab that just disappeared falls back to the first one).
+  window.addEventListener(BUSINESS_CHANGED, () => { if (app.actor) renderShell(); });
   delegate(document.body, {
     click: { lang: changeLang, logout, signup: openSignup, syncPanel: openSyncPanel, printSettings: openPrintDialog },
     change: { switchStore },

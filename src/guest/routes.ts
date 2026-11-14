@@ -16,9 +16,10 @@ import { LOGIN_PROVIDERS } from './identity.ts';
 import type { SmsSender } from './sms.ts';
 import {
   accountAt, cancelGuestBooking, cancelGuestOrder, createGuestBooking, giftTables, guestOrder, markPaymentFailed, menu, paymentStatus, payFromWallet,
-  placeOrder, reserveGuestPayment, tableBill, tableInfo, venueInfo,
+  placeOrder, placeShopOrder, reserveGuestPayment, tableBill, tableInfo, venueInfo,
 } from './venue.ts';
-import { acceptGuestOrder, listGuestOrders, pendingGuestOrderCount, rejectGuestOrder, renewTableQr } from './staff.ts';
+import type { PayTarget } from './venue.ts';
+import { acceptGuestOrder, fulfilGuestOrder, listGuestOrders, pendingGuestOrderCount, rejectGuestOrder, renewTableQr } from './staff.ts';
 import { cancelRequest, createRequest, decideRequest, listGuestRequests, listPets, myRequests, removePet, savePet } from './requests.ts';
 import {
   checkVoucher, claimReferral, listPrizes, listRewards, loyaltyAt, redeemReward, savePrize, saveReward, spinWheel, useVoucher,
@@ -172,6 +173,7 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
   route('GET', '/api/guest/account/:company', false, signedIn(({ db, params }, id) => accountAt(db, id, params[0])));
 
   route('POST', '/api/guest/orders', false, signedIn(({ db, body }, id) => placeOrder(db, id, body)));
+  route('POST', '/api/guest/shop-orders', false, signedIn(({ db, body }, id) => placeShopOrder(db, id, body)));
   route('GET', '/api/guest/orders/:id', false, signedIn(({ db, params }, id) => guestOrder(db, id, num(params[0]))));
   route('POST', '/api/guest/orders/:id/cancel', false, signedIn(async ({ db, params }, id) => {
     await cancelGuestOrder(db, id, num(params[0]));
@@ -179,13 +181,13 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
   }));
 
   route('GET', '/api/guest/table/:token/bill', false, signedIn(({ db, params }) => tableBill(db, params[0])));
-  route('POST', '/api/guest/table/:token/pay', false, signedIn(async ({ db, params, body }, customerId) => {
+  const guestPay = async (db: Db, customerId: number, target: PayTarget, body: any) => {
     const amount = body.amount === undefined || body.amount === null ? undefined : num(body.amount);
-    if (body.method === 'member') return { kind: 'done', ...(await payFromWallet(db, customerId, params[0], amount)) };
+    if (body.method === 'member') return { kind: 'done', ...(await payFromWallet(db, customerId, target, amount)) };
     if (body.method !== 'wechat' && body.method !== 'alipay') throw new DomainError('method must be wechat, alipay or member', 422);
     const provider = payProviders[body.method as OnlineMethod];
     if (!provider) throw new DomainError(`${body.method} payments are not available yet`, 422);
-    const r = await reserveGuestPayment(db, customerId, params[0], provider.method, amount);
+    const r = await reserveGuestPayment(db, customerId, target, provider.method, amount);
     // JSAPI needs the payer's openid for the very appid WeChat Pay is bound to.
     const payAppId = (provider as { appId?: string }).appId;
     const openId = provider.method === 'wechat' && payAppId
@@ -201,7 +203,9 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
       await markPaymentFailed(db, r.paymentId);
       throw new DomainError(`payment provider error: ${(e as Error).message}`, 502);
     }
-  }));
+  };
+  route('POST', '/api/guest/table/:token/pay', false, signedIn(({ db, params, body }, customerId) => guestPay(db, customerId, params[0], body)));
+  route('POST', '/api/guest/orders/:id/pay', false, signedIn(({ db, params, body }, customerId) => guestPay(db, customerId, { orderId: num(params[0]) }, body)));
   route('GET', '/api/guest/payments/:outTradeNo', false, signedIn(({ db, params }, id) => paymentStatus(db, id, params[0])));
   if (isMock) {
     // Development: plays the provider's signed callback for the guest's own pending payment.
@@ -270,6 +274,10 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
   route('GET', '/api/guest-orders/count', true, ({ db, actor }) => pendingGuestOrderCount(db, actor));
   route('POST', '/api/guest-orders/:id/accept', true, ({ db, actor, params, body }) =>
     acceptGuestOrder(db, actor, num(params[0]), body.repId === undefined || body.repId === null || body.repId === '' ? undefined : num(body.repId)));
+  route('POST', '/api/guest-orders/:id/fulfil', true, async ({ db, actor, params, body }) => {
+    await fulfilGuestOrder(db, actor, num(params[0]), body.step);
+    return { ok: true };
+  });
   route('POST', '/api/guest-orders/:id/reject', true, async ({ db, actor, params, body }) => {
     await rejectGuestOrder(db, actor, num(params[0]), body.reason);
     return { ok: true };

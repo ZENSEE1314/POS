@@ -8,12 +8,18 @@ import { navigate } from './nav.js';
 import { selectBillOnMount } from './floor-state.js';
 import { queueTicketLine } from './print/hooks.js';
 import { REQUEST_STATUSES, requestsList, markDone, decline, checkVoucher } from './guest-requests.js';
+import { hasModule } from './business.js';
+
+/** Pickup: ready -> done. Delivery: out -> done. */
+const NEXT_STEP = { pickup: { '': 'ready', ready: 'done' }, delivery: { '': 'out', out: 'done' } };
 
 const STATUSES = ['pending', 'accepted', 'rejected'];
 /** Fired after this view reloads, so the tab's waiting-count badge updates at once. */
 export const GUEST_ORDERS_CHANGED = 'nightpos:guest-orders';
 const POLL_MS = 10_000;
 const TONE = { pending: 'warning', accepted: 'success', rejected: 'danger', cancelled: 'neutral' };
+
+const orderTitle = (o) => (o.tableName ? t('guestOrders.table', { name: o.tableName }) : `${t(`channel.${o.mode}`)} #${o.id}`);
 
 const itemName = (i) => (i.nameEn ? html`${i.name} <span class="muted">${i.nameEn}</span>` : i.name);
 
@@ -23,17 +29,23 @@ export function mountGuestOrders(root) {
   function card(o) {
     const total = o.items.reduce((s, i) => s + i.qty * i.unitPrice, 0);
     return html`<article class="panel guest-order">
-      <div class="guest-order__head"><div><h3 class="section-title">${t('guestOrders.table', { name: o.tableName })}</h3>
+      <div class="guest-order__head"><div><h3 class="section-title">${orderTitle(o)}</h3>
         <p class="muted">${fmtDateTime(o.createdAt)} · ${o.guestName || t('guestOrders.guest')}${o.guestPhone ? ` · ${o.guestPhone}` : ''}</p></div>
         ${badge(t(`guestOrders.status.${o.status}`), TONE[o.status])}</div>
       <ul class="guest-order__items">${o.items.map((i) => html`<li><span>${itemName(i)} × ${i.qty}</span><span class="num">${fmtMoney(i.qty * i.unitPrice)}</span></li>`)}</ul>
       <p class="guest-order__total"><span>${t('floor.total')}</span><strong class="num">${fmtMoney(total)}</strong></p>
       ${o.toTableName && html`<p class="guest-order__note">🎁 ${t('guestOrders.giftTo', { name: o.toTableName })}</p>`}
+      ${o.address && html`<p class="guest-order__note">${t('shop.address')}: ${o.address}</p>`}
+      ${o.pickupAt && html`<p class="guest-order__note">${t('shop.pickupAt')}: ${fmtDateTime(o.pickupAt)}</p>`}
       ${o.note && html`<p class="guest-order__note">${t('guestOrders.note')}: ${o.note}</p>`}
       ${o.rejectReason && html`<p class="muted">${t('guestOrders.reason')}: ${o.rejectReason}</p>`}
-      ${o.status === 'pending' && html`<p class="muted">${o.openBillId ? t('guestOrders.addsToBill', { id: o.openBillId }) : t('guestOrders.opensTable')}</p>
+      ${o.status === 'pending' && html`<p class="muted">${!o.tableId ? t('shop.opensSale') : o.openBillId ? t('guestOrders.addsToBill', { id: o.openBillId }) : t('guestOrders.opensTable')}</p>
         <div class="row"><button type="button" class="btn btn--primary" data-action="accept" data-id="${o.id}">${t('guestOrders.accept')}</button>
         <button type="button" class="btn btn--danger" data-action="reject" data-id="${o.id}">${t('guestOrders.reject')}</button></div>`}
+      ${o.status === 'accepted' && !o.tableId && html`<div class="row">
+        ${badge(o.billStatus === 'settled' ? t('shop.paid') : t('shop.unpaid'), o.billStatus === 'settled' ? 'success' : 'warning')}
+        ${o.fulfilStatus && badge(t(`shop.step.${o.fulfilStatus}`), o.fulfilStatus === 'done' ? 'success' : 'busy')}
+        ${NEXT_STEP[o.mode]?.[o.fulfilStatus] && html`<button type="button" class="btn btn--small btn--primary" data-action="fulfil" data-id="${o.id}">${t(`shop.do.${NEXT_STEP[o.mode][o.fulfilStatus]}`)}</button>`}</div>`}
       ${o.status === 'accepted' && o.billId && html`<button type="button" class="btn btn--small btn--ghost" data-action="openBill" data-id="${o.billId}">${t('guestOrders.openBill')} · ${fmtTime(o.decidedAt)}</button>`}
     </article>`;
   }
@@ -75,7 +87,8 @@ export function mountGuestOrders(root) {
     const send = async (repId) => {
       result = await post(`/api/guest-orders/${o.id}/accept`, repId ? { repId } : {});
     };
-    if (o.openBillId) {
+    // Pickup/delivery orders, and tables at a business without sales reps, need nobody picked.
+    if (o.openBillId || !o.tableId || !hasModule('reps')) {
       el.disabled = true;
       try { await send(); } finally { el.disabled = false; }
     } else {
@@ -91,9 +104,9 @@ export function mountGuestOrders(root) {
     }
     // Kitchen/bar tickets print exactly as if staff had keyed the items in.
     // A gift is made for the other table, so its ticket names where it goes.
-    const ticketTable = o.toTableName ? t('guestOrders.giftTicket', { to: o.toTableName, from: o.tableName }) : o.tableName;
+    const ticketTable = o.toTableName ? t('guestOrders.giftTicket', { to: o.toTableName, from: o.tableName }) : o.tableName ?? orderTitle(o);
     for (const i of o.items) queueTicketLine({ billId: result.billId, product: { id: i.productId, name: i.name, name_en: i.nameEn, station: i.station }, qty: i.qty, table: ticketTable });
-    toast(t('guestOrders.accepted', { name: o.tableName }), 'success');
+    toast(t('guestOrders.accepted', { name: o.tableName ?? orderTitle(o) }), 'success');
     await load();
   }
 
@@ -124,7 +137,16 @@ export function mountGuestOrders(root) {
       refresh: load,
       accept,
       reject,
-      openBill: (el) => { selectBillOnMount(Number(el.dataset.id)); navigate('floor'); },
+      openBill: (el) => {
+        const o = state.orders.find((x) => x.billId === Number(el.dataset.id));
+        selectBillOnMount(Number(el.dataset.id));
+        navigate(o && !o.tableId && hasModule('counter') ? 'counter' : 'floor');
+      },
+      fulfil: async (el) => {
+        const o = find(el);
+        await post(`/api/guest-orders/${o.id}/fulfil`, { step: NEXT_STEP[o.mode][o.fulfilStatus] });
+        await load();
+      },
     },
   });
   return () => clearInterval(timer);

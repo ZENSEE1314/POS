@@ -18,7 +18,7 @@ const PERMISSIONS = {
   'hq.write': ['owner'],
 };
 
-export const app = { token: null, actor: null, store: null, company: null, config: { mock: false, signupOpen: false, payments: {} } };
+export const app = { token: null, actor: null, store: null, company: null, business: null, config: { mock: false, signupOpen: false, payments: {} } };
 
 export const can = (action) => Boolean(app.actor && PERMISSIONS[action].includes(app.actor.role));
 
