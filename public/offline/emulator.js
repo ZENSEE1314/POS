@@ -22,8 +22,8 @@ const FP_SEED = 0x1b873593;
 /** Endpoints whose responses are cached while online and replayed offline (exact path, no query string). */
 const CACHED_GETS = ['/api/tables', '/api/products', '/api/reps', '/api/me', '/api/config', '/api/shifts/current', COUNTER_SALES];
 // Groups: 1 bill id, 2 bill action, 3 line id and 4 "void" for a line void.
-const BILL_PATH = /^\/api\/bills\/(-?\d+)(?:\/(lines|pay|scan|member|discount)|\/lines\/(-?\d+)\/(void))?$/;
-const BILL_POST = /^\/api\/bills\/-?\d+\/(?:lines|pay|scan|member|discount|lines\/-?\d+\/void)$/;
+const BILL_PATH = /^\/api\/bills\/(-?\d+)(?:\/(lines|pay|scan|member|discount|transfer)|\/lines\/(-?\d+)\/(void))?$/;
+const BILL_POST = /^\/api\/bills\/-?\d+\/(?:lines|pay|scan|member|discount|transfer|lines\/-?\d+\/void)$/;
 const MAX_REASON_CHARS = 200;
 
 const needsConnection = () => new ApiError(t('offline.needsConnection'), 0);
@@ -71,12 +71,16 @@ async function findLocalBill(billId) {
 
 const pendingOpsFor = async (ref) => (await listOps()).filter((o) => o.status === 'pending' && (o.ref === ref || o.payload.billRef === ref));
 
-/** Applies local bills on top of a tables list: tables taken by offline bills show occupied, tables whose bill was paid offline show free. */
+/**
+ * Applies local bills on top of a tables list: tables taken by offline bills show occupied, tables whose bill was paid
+ * offline show free, and a bill moved to another table offline frees the table it left.
+ */
 export async function overlayTables(tables) {
   const copies = await localBillsOfStore();
   if (!copies.length) return tables;
   const out = tables.map((tb) => ({ ...tb }));
   for (const c of copies) {
+    for (const left of out.filter((x) => x.bill_id === c.billId && x.id !== c.bill.table_id)) Object.assign(left, { status: 'free', bill_id: null });
     const tb = out.find((x) => x.id === c.bill.table_id);
     if (!tb) continue;
     if (c.bill.status === 'open' && tb.status === 'free' && !tb.bill_id) Object.assign(tb, { status: 'occupied', bill_id: c.billId });
@@ -217,15 +221,15 @@ async function cachedProducts() {
 }
 
 /** Adds one sale line to the working copy and queues the op that will add it on the server. */
-async function pushLine(copy, s, p, { qty, weightG = null, unitPrice, note }, op) {
+async function pushLine(copy, s, p, { qty, weightG = null, unitPrice, note, giftReason = null }, op) {
   const lineId = Math.min(0, ...copy.lines.map((l) => l.id)) - 1;
   // The client ref lets a later offline void name this line before the server has given it an id.
   const lineRef = newId();
   copy.lines.push({
-    id: lineId, bill_id: copy.billId, product_id: p.id, name: p.name, qty, unit_price: unitPrice, kind: 'sale', status: 'active', reason: null,
+    id: lineId, bill_id: copy.billId, product_id: p.id, name: p.name, qty, unit_price: unitPrice, kind: giftReason ? 'gift' : 'sale', status: 'active', reason: giftReason,
     waiter_id: app.actor.id, created_at: Date.now(), weight_g: weightG, price_note: note, client_ref: lineRef,
   });
-  await enqueue(s, copy, op.type, { billRef: copy.ref, ...op.payload, lineRef }, { productName: p.name, qty, ...(weightG ? { weightG } : {}) });
+  await enqueue(s, copy, op.type, { billRef: copy.ref, ...op.payload, lineRef }, { productName: p.name, qty, ...(weightG ? { weightG } : {}), ...(giftReason ? { gift: true } : {}) });
   return { lineId, productId: p.id };
 }
 
@@ -240,18 +244,40 @@ async function addLine(billId, body) {
   need('order.add');
   if (!Number.isInteger(body.qty) || body.qty <= 0 || body.qty > MAX_LINE_QTY) throw fail(`qty must be an integer from 1 to ${MAX_LINE_QTY}`, 422);
   if (!isId(body.productId)) throw fail('productId is required', 422);
-  // Gifts need a manager's approval and a reason on the server: online only.
-  if (body.gift) throw needsConnection();
+  // Same rule as the server: only managers give gifts, always with a reason.
+  if (body.gift) need('order.gift');
+  const giftReason = body.gift ? cleanReason(body) : null;
   const p = (await cachedProducts()).find((x) => x.id === body.productId && x.active);
   if (!p) throw fail('product not found', 404);
   const weightG = body.weightG ?? null;
   checkWeight(p, body.qty, weightG);
   return mutateBill(billId, async (copy, s) => {
-    const price = offlinePrice(p, Boolean(copy.bill.member_phone));
+    // A gift is recorded at list price (it never counts toward the bill), like the server does.
+    const price = giftReason ? { unitPrice: p.price, note: null } : offlinePrice(p, Boolean(copy.bill.member_phone));
     const unitPrice = weightG ? linePrice(price.unitPrice, weightG) : price.unitPrice;
-    const payload = { productId: p.id, qty: body.qty, ...(weightG ? { weightG } : {}) };
-    const { lineId } = await pushLine(copy, s, p, { qty: body.qty, weightG, unitPrice, note: price.note }, { type: 'bill.addLine', payload });
+    const payload = { productId: p.id, qty: body.qty, ...(weightG ? { weightG } : {}), ...(giftReason ? { gift: true, reason: giftReason } : {}) };
+    const { lineId } = await pushLine(copy, s, p, { qty: body.qty, weightG, unitPrice, note: price.note, giftReason }, { type: 'bill.addLine', payload });
     return { lineId };
+  });
+}
+
+/** 转台: moves a table's bill to another free table, the same checks as transferTable() on the server. */
+async function transfer(billId, body) {
+  need('table.open');
+  if (!isId(body.toTableId)) throw fail('toTableId is required', 422);
+  const tablesKey = cacheKey('/api/tables');
+  const tables = tablesKey ? await getValue(tablesKey) : null;
+  if (!tables) throw needsConnection();
+  const to = (await overlayTables(tables)).find((x) => x.id === body.toTableId);
+  return mutateBill(billId, async (copy, s) => {
+    if (copy.bill.table_id == null) throw fail('this sale is not on a table', 409);
+    if (copy.bill.table_id === body.toTableId) throw fail('already on that table', 409);
+    if (!to) throw fail('table not found', 404);
+    if (to.status !== 'free' || to.bill_id) throw fail('target table is not free', 409);
+    await enqueue(s, copy, 'bill.transfer', { billRef: copy.ref, toTableId: to.id }, { toTable: to.name });
+    Object.assign(copy, { tableName: to.name });
+    copy.bill.table_id = to.id;
+    return { ok: true };
   });
 }
 
@@ -439,7 +465,7 @@ export async function emulate(method, path, body = {}) {
   const billId = Number(m[1]);
   if (method === 'GET') return readBill(billId);
   if (m[4]) return voidLine(billId, Number(m[3]), body);
-  const handler = { lines: addLine, pay, scan, member: attachMember, discount: setDiscount }[m[2]];
+  const handler = { lines: addLine, pay, scan, member: attachMember, discount: setDiscount, transfer }[m[2]];
   return handler(billId, body);
 }
 

@@ -225,7 +225,8 @@ export function describeOp(op) {
   switch (op.type) {
     case 'bill.open': return t('sync.what.open', { table });
     case 'counter.open': return t('sync.what.sale');
-    case 'bill.addLine': return t('sync.what.line', { qty: m.qty, product: m.productName, table });
+    case 'bill.addLine': return t(m.gift ? 'sync.what.gift' : 'sync.what.line', { qty: m.qty, product: m.productName, table });
+    case 'bill.transfer': return t('sync.what.transfer', { table, to: m.toTable ?? '?' });
     case 'bill.scan': return t('sync.what.label', { product: m.productName, table });
     case 'bill.member': return t('sync.what.member', { phone: m.phone, table });
     case 'bill.void': return t('sync.what.void', { qty: m.qty, product: m.productName, table });

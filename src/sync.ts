@@ -2,7 +2,7 @@ import type { Db } from './db.ts';
 import { audit, DomainError } from './db.ts';
 import type { Actor } from './auth.ts';
 import { whoOf } from './auth.ts';
-import { addLine, attachMember, openCounterSale, openTable, setDiscount, totals, voidLine } from './bills.ts';
+import { addLine, attachMember, openCounterSale, openTable, setDiscount, totals, transferTable, voidLine } from './bills.ts';
 import { scanCode } from './retail.ts';
 import { cleanPhone } from './phone.ts';
 import { payInstant } from './payments.ts';
@@ -29,8 +29,8 @@ const CLIENT_REF_RE = new RegExp(`^(?:${UUID}|-[1-9]\\d{0,8})$`, 'i');
 const BILL_REF_RE = new RegExp(`^(?:${UUID}|-[1-9]\\d{0,8}|[1-9]\\d{0,14})$`, 'i');
 const REAL_BILL_ID_RE = /^[1-9]\d*$/;
 
-type OpType = 'bill.open' | 'counter.open' | 'bill.addLine' | 'bill.scan' | 'bill.member' | 'bill.void' | 'bill.discount' | 'bill.pay';
-const OP_TYPES: OpType[] = ['bill.open', 'counter.open', 'bill.addLine', 'bill.scan', 'bill.member', 'bill.void', 'bill.discount', 'bill.pay'];
+type OpType = 'bill.open' | 'counter.open' | 'bill.addLine' | 'bill.scan' | 'bill.member' | 'bill.void' | 'bill.discount' | 'bill.transfer' | 'bill.pay';
+const OP_TYPES: OpType[] = ['bill.open', 'counter.open', 'bill.addLine', 'bill.scan', 'bill.member', 'bill.void', 'bill.discount', 'bill.transfer', 'bill.pay'];
 /** Ops that create a bill and carry the client's ref for it. */
 const OPENS_BILL: OpType[] = ['bill.open', 'counter.open'];
 type OpStatus = 'ok' | 'conflict' | 'error' | 'skipped';
@@ -111,6 +111,11 @@ function parsePayload(type: OpType, at: string, p: unknown): Record<string, any>
       if (!isInt(x.amount, 0, MAX_AMOUNT_FEN)) bad(`${at}: amount must be an integer number of fen`);
       reason();
       return x;
+    case 'bill.transfer':
+      onlyKeys(x, ['billRef', 'toTableId'], at);
+      billRef();
+      if (!isInt(x.toTableId, 1, MAX_ID)) bad(`${at}: toTableId must be a positive integer`);
+      return x;
     case 'bill.member':
       onlyKeys(x, ['billRef', 'phone'], at);
       billRef();
@@ -123,9 +128,12 @@ function parsePayload(type: OpType, at: string, p: unknown): Record<string, any>
       if (x.phone !== undefined && (typeof x.phone !== 'string' || x.phone.length > MAX_PHONE_CHARS)) bad(`${at}: phone must be a short string`);
       return x;
     case 'bill.addLine':
-      onlyKeys(x, ['billRef', 'productId', 'qty', 'weightG', 'lineRef'], at);
+      onlyKeys(x, ['billRef', 'productId', 'qty', 'weightG', 'lineRef', 'gift', 'reason'], at);
       billRef();
       lineRef();
+      if (x.gift !== undefined && x.gift !== true) bad(`${at}: gift must be true when present`);
+      if (x.gift) reason();
+      else if (x.reason !== undefined) bad(`${at}: reason is only for gifts`);
       if (!isInt(x.productId, 1, MAX_ID)) bad(`${at}: productId must be a positive integer`);
       if (!isInt(x.qty, 1, MAX_LINE_QTY)) bad(`${at}: qty must be an integer from 1 to ${MAX_LINE_QTY}`);
       if (x.weightG !== undefined && !isInt(x.weightG, 1, MAX_WEIGHT_G)) bad(`${at}: weightG must be whole grams`);
@@ -237,8 +245,15 @@ async function applyOp(t: Db, actor: Actor, op: SyncOp): Promise<OpResult> {
     }
     case 'bill.addLine': {
       const billId = await resolveBillId(t, actor, p.billRef);
-      const lineId = await addLine(t, actor, billId, { productId: p.productId, qty: p.qty, ...(p.weightG !== undefined ? { weightG: p.weightG } : {}) });
+      const lineId = await addLine(t, actor, billId, {
+        productId: p.productId, qty: p.qty, ...(p.weightG !== undefined ? { weightG: p.weightG } : {}), ...(p.gift ? { gift: true, reason: p.reason.trim() } : {}),
+      });
       await claimLineRef(t, actor, p.lineRef, lineId);
+      return { opId: op.opId, status: 'ok', billId };
+    }
+    case 'bill.transfer': {
+      const billId = await resolveBillId(t, actor, p.billRef);
+      await transferTable(t, actor, billId, p.toTableId);
       return { opId: op.opId, status: 'ok', billId };
     }
     case 'bill.pay': {
