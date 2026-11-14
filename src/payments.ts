@@ -6,6 +6,7 @@ import { require_, whoOf } from './auth.ts';
 import { settleIfPaid, totals } from './bills.ts';
 import type { OnlineMethod, PayProvider } from './payments/types.ts';
 import { logEvent } from './ops.ts';
+import { earnForPayment } from './guest/loyalty.ts';
 
 /** Matches the self-heal expiry of unpaid online payments. */
 const PENDING_HOLD_MS = 15 * 60 * 1000;
@@ -117,6 +118,7 @@ export async function handleNotify(db: Db, providerName: OnlineMethod, provider:
     const bill = await t.one('SELECT b.store_id, b.status, s.tenant_id FROM bills b JOIN stores s ON s.id = b.store_id WHERE b.id = ?', [p.bill_id]);
     await audit(t, { tenantId: bill.tenant_id, storeId: bill.store_id }, `pay.${providerName}`, 'bill', p.bill_id, { amount: p.amount, ref: n.providerRef });
     await settleIfPaid(t, null, p.bill_id);
+    if (p.customer_id) await earnForPayment(t, p.customer_id, p.bill_id, p.id, p.amount);
     // The money has moved, so it is recorded; but a bill that was already paid off needs a human to refund the guest.
     const tot = await totals(t, p.bill_id);
     if (tot.paid > tot.total) {

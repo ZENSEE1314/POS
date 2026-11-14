@@ -6,11 +6,12 @@ import { delegate, formDialog, confirmDialog, dataTable, badge, skeleton, notify
 import { categoryLabel } from './bill-view.js';
 import { printersSection, printerActions } from './print/admin-section.js';
 import { showTableQr, showVenueQr } from './table-qr.js';
+import { guestAdminSections } from './guest-admin.js';
 
 const TABLE_KINDS = ['bar', 'booth', 'room'];
 const RULE_ROLES = ['sales', 'waiter'];
 const BPS_PER_PERCENT = 100;
-const SECTION_IDS = ['tables', 'products', 'rules', 'staff', 'printers'];
+const SECTION_IDS = ['tables', 'products', 'rules', 'staff', 'printers', 'guestApp', 'events', 'rewards', 'prizes'];
 const STATIONS = ['', 'bar', 'kitchen'];
 let active = 'tables';
 
@@ -71,6 +72,7 @@ export function mountAdmin(root) {
       dialog: null,
     },
     printers: printersSection(() => reload()),
+    ...guestAdminSections(() => reload()),
   };
 
   const reload = async () => {

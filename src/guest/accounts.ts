@@ -3,6 +3,7 @@ import type { Db } from '../db.ts';
 import { DomainError } from '../db.ts';
 import type { IdentityProfile, LoginProvider } from './identity.ts';
 import type { SmsSender } from './sms.ts';
+import { mergeGuestExtras } from './loyalty.ts';
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const AUTH_STATE_TTL_MS = 10 * 60 * 1000;
@@ -204,6 +205,7 @@ export async function linkPhone(db: Db, customerId: number, token: string, rawPh
     for (const table of ['customer_identities', 'guest_orders', 'bookings', 'payments']) {
       await t.run(`UPDATE ${table} SET customer_id = ? WHERE customer_id = ?`, [owner.id, customerId]);
     }
+    await mergeGuestExtras(t, customerId, owner.id);
     // Sessions are not carried over: every other session of either account ends, and only this device (which just
     // proved the phone) moves to the merged account.
     await t.run('DELETE FROM guest_sessions WHERE customer_id IN (?, ?) AND token_hash <> ?', [customerId, owner.id, current]);

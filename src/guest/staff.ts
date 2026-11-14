@@ -14,9 +14,10 @@ export async function listGuestOrders(db: Db, actor: Actor, status = 'pending') 
   if (!ORDER_STATUSES.includes(status)) throw new DomainError('unknown status', 422);
   const orders = await db.all(
     `SELECT o.id, o.status, o.note, o.reject_reason AS "rejectReason", o.created_at AS "createdAt", o.decided_at AS "decidedAt", o.bill_id AS "billId",
-            o.table_id AS "tableId", d.name AS "tableName", c.display_name AS "guestName", c.phone AS "guestPhone",
+            o.table_id AS "tableId", d.name AS "tableName", g.name AS "toTableName", c.display_name AS "guestName", c.phone AS "guestPhone",
             (SELECT b.id FROM bills b WHERE b.table_id = o.table_id AND b.status = 'open') AS "openBillId"
      FROM guest_orders o JOIN dining_tables d ON d.id = o.table_id JOIN customers c ON c.id = o.customer_id
+     LEFT JOIN dining_tables g ON g.id = o.to_table_id
      WHERE o.store_id = ? AND o.status = ? ORDER BY o.id ${status === 'pending' ? 'ASC' : 'DESC'} LIMIT ?`, [actor.storeId, status, LIST_LIMIT]);
   if (!orders.length) return [];
   const items = await db.all(
@@ -25,10 +26,12 @@ export async function listGuestOrders(db: Db, actor: Actor, status = 'pending') 
   return orders.map((o) => ({ ...o, items: items.filter((i) => i.orderId === o.id) }));
 }
 
-export async function pendingGuestOrderCount(db: Db, actor: Actor): Promise<{ pending: number }> {
+export async function pendingGuestOrderCount(db: Db, actor: Actor): Promise<{ pending: number; orders: number; requests: number }> {
   require_(actor, 'order.add');
-  const r = await db.one("SELECT COUNT(*) AS n FROM guest_orders WHERE store_id = ? AND status = 'pending'", [actor.storeId]);
-  return { pending: r.n };
+  const r = await db.one(
+    `SELECT (SELECT COUNT(*) FROM guest_orders WHERE store_id = ? AND status = 'pending') AS orders,
+            (SELECT COUNT(*) FROM guest_requests WHERE store_id = ? AND status = 'pending') AS requests`, [actor.storeId, actor.storeId]);
+  return { pending: r.orders + r.requests, orders: r.orders, requests: r.requests };
 }
 
 /**

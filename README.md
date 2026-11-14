@@ -7,7 +7,7 @@ WeChat Pay, Alipay and Douyin (抖音来客) integrations; Postgres; self-monito
 ```bash
 npm install
 node scripts/dev.ts          # http://localhost:3500: simulated payments + demo company (dev only)
-npm test                     # 462 tests on embedded Postgres (PGlite)
+npm test                     # 504 tests on embedded Postgres (PGlite)
 node scripts/test-pg.ts      # same suite through the production `pg` driver over the Postgres wire protocol
 node scripts/simulate.ts http://localhost:3500 dev-admin-key 4 25   # multi-company load simulation + books audit
 ```
@@ -38,10 +38,21 @@ A mobile web page for guests, at `/g/<company code>` (works in WeChat, Alipay, D
 | `/g/<company>/<store>/t/<token>` | **table QR code**: order from the menu, follow "my orders", see the table's bill and pay it |
 | `/g/<company>/<store>/book` | request a booking (lands in the staff Bookings tab as "Customer app", status Requested) |
 | `/g/<company>/account` | wallet balance and history, stored bottles with pick-up codes, bookings, recent orders |
+| `/g/<company>/rewards` | points, redeem rewards for voucher codes, my vouchers, invite friends, points history |
+| `/g/<company>/spin` | prize wheel (costs points; prizes are points or freebie vouchers, never cash; 10 spins a day) |
+| `/g/<company>/events` | upcoming events at every location; *Book for this event* opens the booking form with the event attached |
+| `/g/<company>/games` | party games on one phone: dice cup, truth or dare, random "who's next" (nothing is sent or bet) |
+| `/g/<company>/pets` | the guest's pets and pet care requests (grooming, bath, day care, boarding, visit). Off by default |
+| `/g/<company>/support` | message the venue (lost items, questions) and read the reply |
 
 - **Sign-in**: WeChat, Alipay, Douyin or phone + SMS code. One guest account works at every company on the platform. A **verified phone** is what links the guest to a company's member wallet and stash (members are keyed by phone), so wallet, stash and booking need it; if the phone already belongs to another guest account (they signed in another way before), the two accounts are merged.
 - **Ordering**: guest orders wait in the staff **Guest orders** tab (badge with the waiting count). *Accept* puts the items on the table's open bill through the normal path (current price, stock, waiter commission to the accepting staff, bar/kitchen tickets print); a free table is opened first and needs a sales rep. *Reject* needs a reason the guest sees.
 - **Paying**: WeChat Pay (JSAPI inside WeChat when the guest signed in with the same appid; otherwise a QR), Alipay (WAP cashier, returns to the page), or the member wallet. A guest can pay all of it or a share. Paying the last fen settles the bill and frees the table.
+- **Services tab at the table**: call staff (waiter, ice, glasses, clean-up, bill, other), request a song, ask for a stored bottle to be brought over, and send a gift. Requests land in **Guest orders > Requests**; staff mark them *Done* (with an optional reply for messages and pet care) or *Decline* with a reason the guest sees.
+- **Gifts**: a guest picks items, then chooses another open table under *Who is it for?*. It is charged to the sender's own bill once staff accept it; the ticket prints "B2 (gift from B3)" and the other table's page shows the gift and message for 6 hours.
+- **Loyalty**: guests earn points for money paid through the app (default 1 point per ¥1; wallet, WeChat Pay and Alipay payments made in the app; not cash paid at the till). Points buy rewards from Admin > Rewards, which become 8-character voucher codes; staff check and mark them used with *Check voucher* in Guest orders. Vouchers last 30 days.
+- **Invite friends**: every guest has an invite code and link (`/g/<company>?ref=CODE`). A new guest who enters it before paying here gets the bonus (default 200 points) together with the friend, but only after the new guest's first payment.
+- **Settings**: Admin > Customer app switches each feature on or off for the whole company and sets points per ¥1, the invite bonus and the spin cost. Admin > Events, Rewards and Prize wheel manage those lists (the wheel uses a default set until two prizes of your own are active).
 - **QR codes**: Admin > Tables > *QR* shows, prints or renews each table's code (renewing kills printed copies). *Customer page QR* is for posters and Douyin/WeChat profiles. Table codes are random 128-bit tokens, so nobody can order onto a table they cannot see.
 - `PAY_MODE=mock` (dev): every sign-in is a simulated consent page, the SMS code is shown on screen and payments have a *Pay* button.
 

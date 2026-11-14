@@ -3,6 +3,8 @@ import { audit, DomainError } from '../db.ts';
 import { settleIfPaid, totals } from '../bills.ts';
 import { pendingHeld, reservePayment } from '../payments.ts';
 import type { OnlineMethod } from '../payments/types.ts';
+import { earnForPayment } from './loyalty.ts';
+import { guestSettings, requireFeature } from './settings.ts';
 
 const MAX_ORDER_LINES = 30;
 const MAX_LINE_QTY = 99;
@@ -13,18 +15,20 @@ const MAX_ACTIVE_BOOKINGS = 3;
 const BOOKING_HORIZON_MS = 60 * 24 * 60 * 60 * 1000;
 const BOOKING_MIN_LEAD_MS = 15 * 60 * 1000;
 const RECENT = 20;
+/** How long a table keeps seeing "you received a gift" after staff confirm it. */
+const GIFT_NOTICE_MS = 6 * 60 * 60 * 1000;
 
-const text = (v: unknown, name: string, max = MAX_NOTE): string => {
+export const text = (v: unknown, name: string, max = MAX_NOTE): string => {
   if (v == null || v === '') return '';
   if (typeof v !== 'string' || v.length > max) throw new DomainError(`${name}: up to ${max} characters`, 422);
   return v.trim();
 };
-const int = (v: unknown, name: string, min: number, max: number): number => {
+export const int = (v: unknown, name: string, min: number, max: number): number => {
   if (typeof v !== 'number' || !Number.isInteger(v) || v < min || v > max) throw new DomainError(`${name} must be a whole number from ${min} to ${max}`, 422);
   return v;
 };
 
-interface StoreRef { tenantId: number; companyName: string; companyCode: string; storeId: number; storeName: string; storeCode: string }
+export interface StoreRef { tenantId: number; companyName: string; companyCode: string; storeId: number; storeName: string; storeCode: string }
 
 const STORE_SQL = `SELECT t.id AS tenant_id, t.name AS company_name, t.code AS company_code, s.id AS store_id, s.name AS store_name, s.code AS store_code
   FROM stores s JOIN tenants t ON t.id = s.tenant_id WHERE s.active AND t.active`;
@@ -32,20 +36,20 @@ const toStoreRef = (r: any): StoreRef => ({
   tenantId: r.tenant_id, companyName: r.company_name, companyCode: r.company_code, storeId: r.store_id, storeName: r.store_name, storeCode: r.store_code,
 });
 
-async function storeByCode(db: Db, company: string, storeCode: string): Promise<StoreRef> {
+export async function storeByCode(db: Db, company: string, storeCode: string): Promise<StoreRef> {
   const r = await db.one(`${STORE_SQL} AND lower(t.code) = lower(?) AND lower(s.code) = lower(?)`, [company, storeCode]);
   if (!r) throw new DomainError('venue not found', 404);
   return toStoreRef(r);
 }
 
-async function tenantByCode(db: Db, company: string): Promise<{ id: number; name: string; code: string }> {
+export async function tenantByCode(db: Db, company: string): Promise<{ id: number; name: string; code: string }> {
   const t = await db.one('SELECT id, name, code FROM tenants WHERE lower(code) = lower(?) AND active', [company]);
   if (!t) throw new DomainError('venue not found', 404);
   return t;
 }
 
 /** A table is reached only through its QR token, so nobody can order onto a table they cannot see. */
-async function tableByToken(db: Db, qrToken: string, lock = false): Promise<{ table: any; store: StoreRef }> {
+export async function tableByToken(db: Db, qrToken: string, lock = false): Promise<{ table: any; store: StoreRef }> {
   if (!/^[0-9a-f]{32}$/.test(qrToken)) throw new DomainError('table not found', 404);
   const r = await db.one(
     `SELECT d.*, x.* FROM dining_tables d JOIN (${STORE_SQL}) x ON x.store_id = d.store_id WHERE d.qr_token = ? AND d.active${lock ? ' FOR UPDATE OF d' : ''}`, [qrToken]);
@@ -60,7 +64,7 @@ const guestProduct = (p: any) => ({
 export async function venueInfo(db: Db, company: string) {
   const t = await tenantByCode(db, company);
   const stores = await db.all('SELECT name, code FROM stores WHERE tenant_id = ? AND active ORDER BY id', [t.id]);
-  return { company: { name: t.name, code: t.code }, stores };
+  return { company: { name: t.name, code: t.code }, stores, features: (await guestSettings(db, t.id)).features };
 }
 
 export async function menu(db: Db, company: string, storeCode: string) {
@@ -71,12 +75,29 @@ export async function menu(db: Db, company: string, storeCode: string) {
 
 export async function tableInfo(db: Db, qrToken: string) {
   const { table, store } = await tableByToken(db, qrToken);
-  return { company: { name: store.companyName, code: store.companyCode }, store: { name: store.storeName, code: store.storeCode }, table };
+  const gifts = await db.all(
+    `SELECT o.id, o.note AS message, o.decided_at AS "decidedAt", d.name AS "fromTable",
+            (SELECT string_agg(i.name || ' × ' || i.qty, ', ' ORDER BY i.id) FROM guest_order_items i WHERE i.order_id = o.id) AS items
+     FROM guest_orders o JOIN dining_tables d ON d.id = o.table_id
+     WHERE o.to_table_id = ? AND o.status = 'accepted' AND o.decided_at > ? ORDER BY o.decided_at DESC`, [table.id, Date.now() - GIFT_NOTICE_MS]);
+  return {
+    company: { name: store.companyName, code: store.companyCode }, store: { name: store.storeName, code: store.storeCode }, table,
+    features: (await guestSettings(db, store.tenantId)).features, gifts,
+  };
+}
+
+/** Other tables a guest can send a gift to: open (occupied) tables in the same store, by name only. */
+export async function giftTables(db: Db, qrToken: string) {
+  const { table, store } = await tableByToken(db, qrToken);
+  await requireFeature(db, store.tenantId, 'gift');
+  return db.all(
+    `SELECT d.id, d.name FROM dining_tables d WHERE d.store_id = ? AND d.active AND d.id <> ?
+       AND EXISTS (SELECT 1 FROM bills b WHERE b.table_id = d.id AND b.status = 'open') ORDER BY d.name`, [store.storeId, table.id]);
 }
 
 // ---------- table ordering ----------
 
-export async function placeOrder(db: Db, customerId: number, input: { qrToken?: unknown; items?: unknown; note?: unknown }) {
+export async function placeOrder(db: Db, customerId: number, input: { qrToken?: unknown; items?: unknown; note?: unknown; giftTo?: unknown }) {
   const items = Array.isArray(input.items) ? input.items : [];
   if (!items.length || items.length > MAX_ORDER_LINES) throw new DomainError(`an order needs 1 to ${MAX_ORDER_LINES} items`, 422);
   const wanted = new Map<number, number>();
@@ -87,6 +108,16 @@ export async function placeOrder(db: Db, customerId: number, input: { qrToken?: 
   const note = text(input.note, 'note');
   return db.tx(async (t) => {
     const { table, store } = await tableByToken(t, String(input.qrToken ?? ''));
+    let giftTo: number | null = null;
+    if (input.giftTo !== undefined && input.giftTo !== null) {
+      // A gift is charged to the sender's own table and carried to the other one.
+      await requireFeature(t, store.tenantId, 'gift');
+      giftTo = int(input.giftTo, 'giftTo', 1, Number.MAX_SAFE_INTEGER);
+      const target = await t.one(
+        `SELECT d.id FROM dining_tables d WHERE d.id = ? AND d.store_id = ? AND d.active AND d.id <> ?
+           AND EXISTS (SELECT 1 FROM bills b WHERE b.table_id = d.id AND b.status = 'open')`, [giftTo, store.storeId, table.id]);
+      if (!target) throw new DomainError('that table is not open right now', 409);
+    }
     const pending = await t.one("SELECT COUNT(*) AS n FROM guest_orders WHERE customer_id = ? AND status = 'pending'", [customerId]);
     if (pending.n >= MAX_PENDING_ORDERS) throw new DomainError('you have orders waiting for staff; please wait for them first', 429);
     const products = await t.all('SELECT * FROM products WHERE store_id = ? AND active AND id = ANY(?)', [store.storeId, [...wanted.keys()]]);
@@ -94,7 +125,8 @@ export async function placeOrder(db: Db, customerId: number, input: { qrToken?: 
     for (const p of products) {
       if (p.track_stock && p.stock < wanted.get(p.id)!) throw new DomainError(`${p.name}: not enough left`, 409);
     }
-    const orderId = await t.insert('INSERT INTO guest_orders (store_id, table_id, customer_id, note, created_at) VALUES (?,?,?,?,?)', [store.storeId, table.id, customerId, note, Date.now()]);
+    const orderId = await t.insert('INSERT INTO guest_orders (store_id, table_id, customer_id, note, created_at, to_table_id) VALUES (?,?,?,?,?,?)',
+      [store.storeId, table.id, customerId, note, Date.now(), giftTo]);
     for (const p of products) {
       await t.run('INSERT INTO guest_order_items (order_id, product_id, name, qty, unit_price) VALUES (?,?,?,?,?)', [orderId, p.id, p.name, wanted.get(p.id), p.price]);
     }
@@ -115,11 +147,11 @@ async function orderItems(db: Db, orderIds: number[]) {
 
 const orderView = (o: any, items: any[]) => ({
   id: o.id, status: o.status, note: o.note, rejectReason: o.reject_reason, createdAt: o.created_at, decidedAt: o.decided_at,
-  tableName: o.table_name, storeName: o.store_name, items, total: items.reduce((s, i) => s + i.qty * i.unitPrice, 0),
+  tableName: o.table_name, storeName: o.store_name, toTableName: o.to_table_name ?? null, items, total: items.reduce((s, i) => s + i.qty * i.unitPrice, 0),
 });
 
-const ORDER_SQL = `SELECT o.*, d.name AS table_name, s.name AS store_name FROM guest_orders o
-  JOIN dining_tables d ON d.id = o.table_id JOIN stores s ON s.id = o.store_id`;
+const ORDER_SQL = `SELECT o.*, d.name AS table_name, s.name AS store_name, g.name AS to_table_name FROM guest_orders o
+  JOIN dining_tables d ON d.id = o.table_id JOIN stores s ON s.id = o.store_id LEFT JOIN dining_tables g ON g.id = o.to_table_id`;
 
 export async function guestOrder(db: Db, customerId: number, orderId: number) {
   const o = await db.one(`${ORDER_SQL} WHERE o.id = ? AND o.customer_id = ?`, [orderId, customerId]);
@@ -192,7 +224,8 @@ export async function payFromWallet(db: Db, customerId: number, qrToken: string,
     if (!n) throw new DomainError('not enough balance in your wallet', 402);
     const now = Date.now();
     await t.run('INSERT INTO wallet_ledger (member_id, store_id, delta, reason, bill_id, ts) VALUES (?,?,?,?,?,?)', [member.id, store.storeId, -pay, 'bill payment (guest app)', billId, now]);
-    await t.run("INSERT INTO payments (bill_id, method, amount, status, created_at, paid_at, customer_id) VALUES (?,'member',?,'paid',?,?,?)", [billId, pay, now, now, customerId]);
+    const paymentId = await t.insert("INSERT INTO payments (bill_id, method, amount, status, created_at, paid_at, customer_id) VALUES (?,'member',?,'paid',?,?,?)", [billId, pay, now, now, customerId]);
+    await earnForPayment(t, customerId, billId, paymentId, pay);
     await audit(t, { tenantId: store.tenantId, storeId: store.storeId }, 'pay.member', 'bill', billId, { amount: pay, customerId, via: 'guest' });
     return { paid: pay, settled: await settleIfPaid(t, null, billId) };
   });
@@ -209,13 +242,21 @@ export async function createGuestBooking(db: Db, customerId: number, input: Reco
   const now = Date.now();
   if (eta < now + BOOKING_MIN_LEAD_MS || eta > now + BOOKING_HORIZON_MS) throw new DomainError('choose a time between 15 minutes and 60 days from now', 422);
   const name = text(input.name, 'name', 40) || c.display_name;
-  const note = text(input.note, 'note');
+  let note = text(input.note, 'note');
+  let eventId: number | null = null;
+  if (input.eventId !== undefined && input.eventId !== null) {
+    eventId = int(input.eventId, 'eventId', 1, Number.MAX_SAFE_INTEGER);
+    const ev = await db.one('SELECT title FROM venue_events WHERE id = ? AND store_id = ? AND active AND ends_at >= ?', [eventId, s.storeId, now]);
+    if (!ev) throw new DomainError('this event is not open for booking', 404);
+    // Staff read the booking note, so the event name goes there too.
+    note = `[${ev.title}] ${note}`.trim();
+  }
   return db.tx(async (t) => {
     const active = await t.one("SELECT COUNT(*) AS n FROM bookings WHERE customer_id = ? AND store_id = ? AND status IN ('submitted','confirmed') AND eta > ?", [customerId, s.storeId, now]);
     if (active.n >= MAX_ACTIVE_BOOKINGS) throw new DomainError(`you already have ${MAX_ACTIVE_BOOKINGS} upcoming bookings here`, 409);
     const id = await t.insert(
-      `INSERT INTO bookings (store_id, source, phone, name, party_size, eta, status, created_at, customer_id, note)
-       VALUES (?, 'guest', ?, ?, ?, ?, 'submitted', ?, ?, ?)`, [s.storeId, c.phone, name, partySize, eta, now, customerId, note]);
+      `INSERT INTO bookings (store_id, source, phone, name, party_size, eta, status, created_at, customer_id, note, event_id)
+       VALUES (?, 'guest', ?, ?, ?, ?, 'submitted', ?, ?, ?, ?)`, [s.storeId, c.phone, name, partySize, eta, now, customerId, note, eventId]);
     await audit(t, { tenantId: s.tenantId, storeId: s.storeId }, 'booking.guest', 'booking', id, { customerId, partySize, eta });
     return { bookingId: id };
   });

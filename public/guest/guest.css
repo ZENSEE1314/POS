@@ -194,3 +194,48 @@ button { font: inherit; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
 }
+
+/* ---------- services, gifts, rewards, wheel, games ---------- */
+.g-center { text-align: center; }
+.g-pre { white-space: pre-line; }
+.g-svcgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+.g-svcgrid .g-btn { width: 100%; }
+.g-gift {
+  margin-top: var(--space-3); padding: var(--space-3) var(--space-4); border-radius: var(--radius-lg);
+  background: var(--color-success-bg); border: 1px solid var(--color-success); color: var(--color-fg-strong);
+}
+.g-event + .g-event { margin-top: var(--space-3); }
+.g-event .g-card__title { margin: var(--space-1) 0 var(--space-2); }
+.g-voucher {
+  flex: none; padding: var(--space-1) var(--space-3); border-radius: var(--radius-sm); letter-spacing: 0.12em; font-weight: var(--weight-bold);
+  color: var(--color-qr-fg); background: var(--color-qr-bg);
+}
+.g-voucher--off { opacity: 0.5; text-decoration: line-through; }
+.g-sum dd.g-voucher { justify-self: end; }
+
+.g-wheel { position: relative; width: min(100%, 340px); margin: var(--space-6) auto var(--space-4); aspect-ratio: 1; }
+.g-wheel__pointer { position: absolute; top: -6px; left: 50%; z-index: 1; transform: translateX(-50%); font-size: 28px; line-height: 1; color: var(--color-primary-light); text-shadow: var(--shadow-glow); }
+.g-wheel__spin { width: 100%; height: 100%; will-change: transform; }
+.g-wheel svg { display: block; width: 100%; height: 100%; }
+.g-wheel__slice--a { fill: var(--color-primary); }
+.g-wheel__slice--b { fill: var(--color-secondary); }
+.g-wheel__slice--none { fill: var(--color-surface-solid); }
+.g-wheel__slice { stroke: var(--color-bg); stroke-width: 2; }
+.g-wheel__label { font-size: 12px; font-weight: 700; fill: var(--color-fg-strong); paint-order: stroke; stroke: var(--color-bg); stroke-width: 3px; }
+.g-wheel__rim { fill: none; stroke: var(--color-primary-light); stroke-width: 4; }
+.g-wheel__hub { fill: var(--color-primary-strong); stroke: var(--color-bg); stroke-width: 3; }
+
+.g-dice { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: var(--space-2); min-height: 120px; margin: var(--space-4) 0; }
+.g-dice p { flex-basis: 100%; }
+.g-die { font-size: 56px; line-height: 1; color: var(--color-fg-strong); }
+.g-cup { font-size: 88px; line-height: 1; color: var(--color-primary); }
+.g-dice--shaking { animation: g-shake 0.12s linear infinite; }
+@keyframes g-shake { 0%, 100% { transform: translateX(0) rotate(0); } 25% { transform: translateX(-6px) rotate(-4deg); } 75% { transform: translateX(6px) rotate(4deg); } }
+.g-todcard {
+  display: grid; place-items: center; min-height: 160px; margin: var(--space-4) 0; padding: var(--space-4); text-align: center;
+  font-size: var(--text-lg); font-weight: var(--weight-bold); border-radius: var(--radius-lg); border: 1px dashed var(--color-border-strong);
+}
+.g-todcard--truth { background: var(--color-surface-hi); }
+.g-todcard--dare { background: var(--color-warning-bg); }
+.g-picked { min-height: 48px; margin: var(--space-3) 0; text-align: center; font-family: var(--font-display); font-size: var(--text-xl); font-weight: var(--weight-bold); color: var(--color-primary); }
+@media (prefers-reduced-motion: reduce) { .g-dice--shaking { animation: none; } }

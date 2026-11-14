@@ -1,9 +1,10 @@
 // Menu (browse or order at a table), cart, my orders at this table, the table's bill and paying it.
 import { t, tOr } from './i18n.js';
 import {
-  html, raw, setHtml, fmtMoney, parseFen, productName, productSubName, session, get, post, sheet, toast, toastError, busy, skeleton, isWechatBrowser,
+  html, raw, setHtml, fmtMoney, fmtBottles, parseFen, productName, productSubName, session, get, post, sheet, toast, toastError, busy, skeleton, isWechatBrowser,
 } from './core.js';
 import { ensureSignedIn, verifyPhone } from './login.js';
+import { requestsHtml, onCancelRequest } from './extras.js';
 import { qrSvg } from '/qr.js';
 
 const ORDER_POLL_MS = 8000;
@@ -13,6 +14,7 @@ const MAX_QTY = 99;
 const CART_PREFIX = 'nightpos.cart.';
 const RESUME_KEY = 'nightpos.resumeOrder';
 const STATUS_TONE = { pending: 'pending', accepted: 'ok', rejected: 'bad', cancelled: 'neutral' };
+const SERVICE_REASONS = ['waiter', 'ice', 'glasses', 'cleanup', 'bill', 'other'];
 
 const categoryLabel = (c) => (c ? tOr(`cat.${c}`, c) : t('cat.none'));
 
@@ -70,7 +72,8 @@ export async function mountTable(root, { token, onTitle }) {
   const menu = await get(`/api/guest/venue/${encodeURIComponent(info.company.code)}/${encodeURIComponent(info.store.code)}/menu`);
   const products = new Map(menu.products.map((p) => [p.id, p]));
   const cartKey = `${CART_PREFIX}${token}`;
-  const state = { tab: 'menu', category: '', cart: loadCart(cartKey, products), orders: [], bill: undefined, timer: null, alive: true, barShown: false, justPaid: false };
+  const features = info.features ?? {};
+  const state = { tab: 'menu', category: '', cart: loadCart(cartKey, products), orders: [], requests: [], bill: undefined, timer: null, alive: true, barShown: false, justPaid: false };
 
   const saveCart = () => {
     try { sessionStorage.setItem(cartKey, JSON.stringify([...state.cart])); } catch { /* blocked storage: cart lives in memory */ }
@@ -81,6 +84,11 @@ export async function mountTable(root, { token, onTitle }) {
     const acct = await get(`/api/guest/account/${encodeURIComponent(info.company.code)}`);
     state.orders = acct.orders.filter((o) => o.tableName === info.table.name && o.storeName === info.store.name);
   };
+  const loadRequests = async () => {
+    if (!session.customer) { state.requests = []; return; }
+    const list = await get(`/api/guest/requests/${encodeURIComponent(info.company.code)}`);
+    state.requests = list.filter((r) => r.tableName === info.table.name && r.storeName === info.store.name);
+  };
   const loadBill = async () => {
     state.bill = session.customer ? (await get(`/api/guest/table/${encodeURIComponent(token)}/bill`)).bill : null;
   };
@@ -88,13 +96,17 @@ export async function mountTable(root, { token, onTitle }) {
   const cartCount = () => [...state.cart.values()].reduce((a, b) => a + b, 0);
   const cartTotal = () => [...state.cart].reduce((s, [id, q]) => s + (products.get(id)?.price ?? 0) * q, 0);
   const pendingCount = () => state.orders.filter((o) => o.status === 'pending').length;
+  const pendingRequests = () => state.requests.filter((r) => r.status === 'pending').length;
+  const hasServices = ['service', 'song', 'bottle', 'gift'].some((f) => features[f]);
 
   function render() {
     if (!state.alive) return;
-    const tabs = [['menu', t('table.tab.menu'), 0], ['orders', t('table.tab.orders'), pendingCount()], ['bill', t('table.tab.bill'), 0]];
+    const tabs = [['menu', t('table.tab.menu'), 0], ['orders', t('table.tab.orders'), pendingCount()], ['bill', t('table.tab.bill'), 0],
+      ...(hasServices ? [['more', t('table.tab.more'), pendingRequests()]] : [])];
     let body;
     if (state.tab === 'menu') body = menuHtml(menu.products, state);
     else if (state.tab === 'orders') body = ordersHtml(state.orders, session.customer);
+    else if (state.tab === 'more') body = servicesHtml(features, state.requests, session.customer);
     else body = billHtml(state.bill, session.customer, state.justPaid);
     const n = cartCount();
     // The bar slides in once; re-renders on every tap must not replay the animation.
@@ -102,6 +114,8 @@ export async function mountTable(root, { token, onTitle }) {
     state.barShown = state.tab === 'menu' && n > 0;
     setHtml(root, html`<div class="g-tableban"><div><span class="g-muted">${t('table.at')}</span><br><strong>${info.table.name}</strong></div>
         <span class="g-muted">${info.store.name}</span></div>
+      ${(info.gifts ?? []).map((g) => html`<div class="g-gift" role="status"><strong>🎁 ${t('gift.notice', { table: g.fromTable })}</strong><br>
+        <span>${g.items}</span>${g.message && html`<br><span class="g-hint">“${g.message}”</span>`}</div>`)}
       <div class="g-seg" role="group">${tabs.map(([id, label, count]) =>
         html`<button type="button" data-tab="${id}" aria-pressed="${String(state.tab === id)}">${label}${count > 0 && html`<span class="g-count">${count}</span>`}</button>`)}</div>
       <div data-body aria-live="polite">${body}</div>
@@ -111,17 +125,20 @@ export async function mountTable(root, { token, onTitle }) {
 
   const refresh = async () => {
     try {
-      await Promise.all([loadOrders(), loadBill()]);
+      await Promise.all([loadOrders(), loadBill(), loadRequests()]);
     } catch (e) {
       if (e.status !== 401) toastError(e);
     }
     render();
   };
 
-  const reviewCart = (note = '') => sheet(t('cart.title'), (body, close) => {
+  const reviewCart = (note = '', giftTables = []) => sheet(t('cart.title'), (body, close) => {
     const lines = [...state.cart].map(([id, qty]) => ({ p: products.get(id), qty })).filter((l) => l.p);
     setHtml(body, html`<ul class="g-lines">${lines.map((l) => html`<li><span>${productName(l.p)} × ${l.qty}</span><span class="g-num">${fmtMoney(l.p.price * l.qty)}</span></li>`)}</ul>
       <dl class="g-sum"><dt class="g-sum__due">${t('bill.total')}</dt><dd class="g-sum__due g-num">${fmtMoney(cartTotal())}</dd></dl>
+      ${giftTables.length > 0 && html`<div class="g-field g-gap"><label for="gto">${t('gift.for')}</label><select id="gto">
+        <option value="">${t('gift.ourTable')}</option>${giftTables.map((g) => html`<option value="${g.id}">${t('gift.toTable', { name: g.name })}</option>`)}</select>
+        <p class="g-hint">${t('gift.charged')}</p></div>`}
       <div class="g-field g-gap"><label for="note">${t('cart.note')}</label><textarea id="note" maxlength="200" placeholder="${t('cart.notePh')}">${note}</textarea></div>
       <p class="g-hint g-lead">${t('cart.staffNote')}</p>
       <button type="button" class="g-btn g-btn--primary g-btn--block" data-send>${t('cart.send')}</button>`);
@@ -132,15 +149,24 @@ export async function mountTable(root, { token, onTitle }) {
       const signedIn = await ensureSignedIn();
       if (!signedIn) return;
       writeSession(RESUME_KEY, null);
-      await post('/api/guest/orders', { qrToken: token, items: [...state.cart].map(([productId, qty]) => ({ productId, qty })), note: body.querySelector('#note').value });
+      const giftTo = body.querySelector('#gto')?.value;
+      await post('/api/guest/orders', {
+        qrToken: token, items: [...state.cart].map(([productId, qty]) => ({ productId, qty })), note: body.querySelector('#note').value,
+        ...(giftTo ? { giftTo: Number(giftTo) } : {}),
+      });
       state.cart.clear();
       saveCart();
-      toast(t('cart.sent'), 'success');
+      toast(giftTo ? t('gift.sent') : t('cart.sent'), 'success');
       close(true);
       state.tab = 'orders';
       await refresh();
     }));
   });
+
+  const loadGiftTables = async () => {
+    if (!features.gift || !session.customer) return [];
+    try { return await get(`/api/guest/table/${encodeURIComponent(token)}/tables`); } catch { return []; }
+  };
 
   const cancelOrder = async (id) => {
     await post(`/api/guest/orders/${id}/cancel`);
@@ -174,12 +200,24 @@ export async function mountTable(root, { token, onTitle }) {
         saveCart();
         render();
       } else if (el.dataset.review !== undefined) {
-        await reviewCart();
+        await reviewCart('', await loadGiftTables());
         render();
       } else if (el.dataset.cancelOrder) {
         await busy(el, () => cancelOrder(el.dataset.cancelOrder))();
       } else if (el.dataset.signin !== undefined) {
         if (await ensureSignedIn()) await refresh();
+      } else if (el.dataset.service !== undefined) {
+        await askService(token, el.dataset.service);
+        await refresh();
+      } else if (el.dataset.song !== undefined) {
+        await askSong(token);
+        await refresh();
+      } else if (el.dataset.bottle !== undefined) {
+        await askBottle(token, info);
+        await refresh();
+      } else if (el.dataset.giftstart !== undefined) {
+        state.tab = 'menu';
+        render();
       } else if (el.dataset.pay !== undefined) {
         await openPay(token, state.bill, info.company.code, async () => { state.justPaid = true; await refresh(); });
       }
@@ -188,6 +226,7 @@ export async function mountTable(root, { token, onTitle }) {
     }
   });
 
+  onCancelRequest(root, refresh);
   render();
   if (session.customer) await refresh();
   const resume = readResume();
@@ -233,11 +272,75 @@ export function ordersHtml(orders, signedIn = true) {
   return html`<div class="g-card">${orders.map((o) => html`<article class="g-order">
     <div class="g-order__head"><span class="g-badge g-badge--${STATUS_TONE[o.status]}">${t(`orders.${o.status}`)}</span>
       <span class="g-num">${fmtMoney(o.total)}</span></div>
+    ${o.toTableName && html`<p class="g-hint">🎁 ${t('orders.giftTo', { name: o.toTableName })}</p>`}
     <ul class="g-lines">${o.items.map((i) => html`<li><span>${productName(i)} × ${i.qty}</span></li>`)}</ul>
     ${o.note && html`<p class="g-hint">${o.note}</p>`}
     ${o.rejectReason && html`<p class="g-hint">${t('orders.reason', { reason: o.rejectReason })}</p>`}
     ${o.status === 'pending' && html`<button type="button" class="g-btn g-btn--small g-gap" data-cancel-order="${o.id}">${t('orders.cancel')}</button>`}
   </article>`)}</div>`;
+}
+
+function servicesHtml(features, requests, signedIn) {
+  if (!signedIn) return signInPrompt();
+  return html`${features.service && html`<section class="g-card" aria-labelledby="svc-t"><h2 id="svc-t" class="g-card__title">${t('svc.callTitle')}</h2>
+      <div class="g-svcgrid">${SERVICE_REASONS.map((r) => html`<button type="button" class="g-btn" data-service="${r}">${t(`svc.reason.${r}`)}</button>`)}</div></section>`}
+    <div class="g-actions">
+      ${features.song && html`<button type="button" class="g-tile" data-song><span class="g-tile__mark" aria-hidden="true">♪</span><span class="g-tile__text"><strong>${t('song.title')}</strong></span></button>`}
+      ${features.bottle && html`<button type="button" class="g-tile" data-bottle><span class="g-tile__mark" aria-hidden="true">⌂</span><span class="g-tile__text"><strong>${t('bottle.title')}</strong></span></button>`}
+      ${features.gift && html`<button type="button" class="g-tile" data-giftstart><span class="g-tile__mark" aria-hidden="true">🎁</span><span class="g-tile__text"><strong>${t('gift.title')}</strong><span>${t('gift.text')}</span></span></button>`}
+    </div>
+    <section class="g-card g-gap" aria-labelledby="req-t"><h2 id="req-t" class="g-card__title">${t('req.mine')}</h2>${requestsHtml(requests)}</section>`;
+}
+
+/** A small form sheet that posts one request; resolves true once sent. */
+function requestSheet(title, fieldsHtml, toBody, sentKey) {
+  return sheet(title, (body, close) => {
+    setHtml(body, html`<form novalidate>${fieldsHtml}<p class="g-error" role="alert" hidden></p>
+      <button type="submit" class="g-btn g-btn--primary g-btn--block">${t('svc.send')}</button></form>`);
+    const form = body.querySelector('form');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const err = form.querySelector('.g-error');
+      try {
+        await post('/api/guest/requests', toBody(form.elements));
+        toast(t(sentKey), 'success');
+        close(true);
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.hidden = false;
+      }
+    });
+  });
+}
+
+const askService = (token, reason) => requestSheet(t(`svc.reason.${reason}`),
+  html`<div class="g-field"><label for="sn">${t('svc.note')}</label><input id="sn" name="note" maxlength="200"></div>`,
+  (f) => ({ kind: 'service', qrToken: token, reason, note: f.note.value }), 'svc.sent');
+
+const askSong = (token) => requestSheet(t('song.title'),
+  html`<div class="g-field"><label for="st">${t('song.song')}</label><input id="st" name="title" maxlength="100" required></div>
+    <div class="g-field"><label for="sa">${t('song.artist')}</label><input id="sa" name="artist" maxlength="100"></div>
+    <div class="g-field"><label for="sm">${t('song.note')}</label><input id="sm" name="note" maxlength="200"></div>`,
+  (f) => ({ kind: 'song', qrToken: token, title: f.title.value, artist: f.artist.value, note: f.note.value }), 'song.sent');
+
+async function askBottle(token, info) {
+  if (!session.customer.phone) {
+    toast(t('bottle.needPhone'));
+    await verifyPhone();
+    if (!session.customer?.phone) return;
+  }
+  const acct = await get(`/api/guest/account/${encodeURIComponent(info.company.code)}`);
+  const here = acct.stash.filter((x) => x.storeName === info.store.name);
+  await sheet(t('bottle.title'), (body, close) => {
+    if (!here.length) { setHtml(body, html`<p class="g-muted">${t('bottle.none')}</p>`); return; }
+    setHtml(body, html`<ul class="g-lines">${here.map((x) => html`<li><span><strong>${x.name}</strong><br><span class="g-hint">${t('account.stashLeft', { n: fmtBottles(x.leftMilli) })}</span></span>
+      <button type="button" class="g-btn g-btn--small g-btn--primary" data-code="${x.code}">${t('bottle.ask')}</button></li>`)}</ul>`);
+    body.querySelectorAll('[data-code]').forEach((b) => b.addEventListener('click', busy(b, async () => {
+      await post('/api/guest/requests', { kind: 'bottle', qrToken: token, code: b.dataset.code });
+      toast(t('bottle.sent'), 'success');
+      close(true);
+    })));
+  });
 }
 
 function billHtml(bill, signedIn, justPaid) {

@@ -2,6 +2,7 @@
 //   /g/                              enter a venue code
 //   /g/<company>                     venue home (choose a location)
 //   /g/<company>/account             my account at this company
+//   /g/<company>/rewards|spin|events|games|pets|support   venue-wide extras
 //   /g/<company>/<store>             location home
 //   /g/<company>/<store>/menu        browse the menu
 //   /g/<company>/<store>/book        book a table
@@ -11,6 +12,18 @@ import { html, setHtml, session, get, loadToken, toastError, skeleton } from './
 import { finishProviderLogin, loadCustomer } from './login.js';
 import { mountMenuBrowse, mountTable, waitForPayment } from './table.js';
 import { mountAccount, mountBooking } from './account.js';
+import { captureReferral, claimPendingReferral, mountEvents, mountPets, mountRewards, mountSpin, mountSupport } from './extras.js';
+import { mountGames } from './games.js';
+
+/** Venue-wide screens; these words are never store codes. */
+const EXTRAS = {
+  rewards: (root, ctx) => mountRewards(root, ctx),
+  spin: (root, ctx) => mountSpin(root, ctx),
+  events: (root, ctx) => mountEvents(root, ctx),
+  games: (root) => mountGames(root),
+  pets: (root, ctx) => mountPets(root, ctx),
+  support: (root, ctx) => mountSupport(root, ctx),
+};
 
 const appEl = document.getElementById('app');
 const venueCache = new Map();
@@ -88,19 +101,28 @@ function venueHome(root, v) {
     ${v.stores.length > 1 && html`<h2 class="g-cat">${t('venue.pickStore')}</h2>`}
     <div class="g-actions">${v.stores.length > 1
       ? v.stores.map((s) => tile(`/g/${enc(company)}/${enc(s.code)}`, '✦', s.name, t('venue.storeSub')))
-      : storeTiles(company, v.stores[0])}
-      ${v.stores.length > 1 && tile(`/g/${enc(company)}/account`, '☺', t('venue.account'), t('venue.accountSub'))}</div>`);
+      : storeTiles(company, v.stores[0])}</div>
+    <div class="g-actions">${extraTiles(company, v.features ?? {})}</div>`);
 }
 
 const storeTiles = (company, s) => [
   tile(`/g/${enc(company)}/${enc(s.code)}/menu`, '≡', t('venue.menu'), t('venue.menuSub')),
   tile(`/g/${enc(company)}/${enc(s.code)}/book`, '◷', t('venue.book'), t('venue.bookSub')),
+];
+
+const extraTiles = (company, f) => [
+  f.events && tile(`/g/${enc(company)}/events`, '★', t('venue.events'), t('venue.eventsSub')),
+  f.loyalty && tile(`/g/${enc(company)}/rewards`, '◆', t('venue.rewards'), t('venue.rewardsSub')),
+  f.games && tile(`/g/${enc(company)}/games`, '⚄', t('venue.games'), t('venue.gamesSub')),
+  f.pets && tile(`/g/${enc(company)}/pets`, '🐾', t('venue.pets'), t('venue.petsSub')),
+  f.support && tile(`/g/${enc(company)}/support`, '✉', t('venue.support'), t('venue.supportSub')),
   tile(`/g/${enc(company)}/account`, '☺', t('venue.account'), t('venue.accountSub')),
 ];
 
 function storeHome(root, v, store) {
   setHtml(root, html`<section class="g-hero"><p class="g-hero__eyebrow">${v.company.name}</p><h1 class="g-hero__title">${store.name}</h1>
-    <p class="g-hero__text">${t('venue.scanHint')}</p></section><div class="g-actions">${storeTiles(v.company.code, store)}</div>`);
+    <p class="g-hero__text">${t('venue.scanHint')}</p></section><div class="g-actions">${storeTiles(v.company.code, store)}</div>
+    <div class="g-actions">${extraTiles(v.company.code, v.features ?? {})}</div>`);
 }
 
 async function route() {
@@ -112,11 +134,13 @@ async function route() {
   try {
     if (!company) { landing(root); return; }
     setHtml(root, skeleton(4));
-    if (second === undefined || second === 'account') {
+    if (second === undefined || second === 'account' || EXTRAS[second]) {
       const v = await venue(company);
       header = { title: v.company.name, subtitle: '', company: v.company.code };
       root = frame();
+      void claimPendingReferral(v.company.code);
       if (second === 'account') await mountAccount(root, { company: v.company.code, navigate });
+      else if (EXTRAS[second]) await EXTRAS[second](root, { company: v.company.code, stores: v.stores, navigate });
       else venueHome(root, v);
       return;
     }
@@ -158,6 +182,7 @@ async function boot() {
   loadLang();
   document.title = t('app.name');
   loadToken();
+  captureReferral(parts()[0]);
   appEl.addEventListener('click', (e) => {
     const a = e.target.closest('a[data-link]');
     if (a && !e.metaKey && !e.ctrlKey && !e.shiftKey) {

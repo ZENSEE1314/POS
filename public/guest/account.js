@@ -1,5 +1,5 @@
 // "My account" at one venue company (profile, wallet, stored bottles, bookings, orders) and the booking form.
-import { t } from './i18n.js';
+import { t, getLang } from './i18n.js';
 import { html, setHtml, fmtMoney, fmtBottles, fmtDate, fmtDateTime, session, get, post, patch, saveToken, sheet, toast, busy, skeleton } from './core.js';
 import { ensureSignedIn, verifyPhone } from './login.js';
 import { ordersHtml } from './table.js';
@@ -93,6 +93,11 @@ function rename(after) {
 }
 
 export async function mountBooking(root, { company, store, stores, navigate }) {
+  const eventId = Number(new URLSearchParams(location.search).get('event')) || null;
+  let event = null;
+  if (eventId) {
+    try { event = (await get(`/api/guest/events/${encodeURIComponent(company)}`)).find((e) => e.id === eventId) ?? null; } catch { /* book without the event */ }
+  }
   const render = () => {
     if (!session.customer) { signedOutCard(root, render); return; }
     if (!session.customer.phone) {
@@ -102,9 +107,10 @@ export async function mountBooking(root, { company, store, stores, navigate }) {
       return;
     }
     setHtml(root, html`<form class="g-card" novalidate><h1 class="g-card__title">${t('book.title')}</h1>
+      ${event && html`<p class="g-lead"><span class="g-badge g-badge--ok">${t('book.event')}</span> <strong>${getLang() === 'en' && event.titleEn ? event.titleEn : event.title}</strong></p>`}
       ${stores.length > 1 && html`<div class="g-field"><label for="st">${t('book.store')}</label><select id="st" name="store">${stores.map((s) =>
         html`<option value="${s.code}" ${s.code.toLowerCase() === String(store).toLowerCase() ? 'selected' : ''}>${s.name}</option>`)}</select></div>`}
-      <div class="g-field"><label for="eta">${t('book.when')}</label><input id="eta" name="eta" type="datetime-local" required value="${toLocalInput(Date.now() + DEFAULT_LEAD_MS)}"></div>
+      <div class="g-field"><label for="eta">${t('book.when')}</label><input id="eta" name="eta" type="datetime-local" required value="${toLocalInput(event && event.startsAt > Date.now() ? event.startsAt : Date.now() + DEFAULT_LEAD_MS)}"></div>
       <div class="g-field"><label for="party">${t('book.party')}</label><input id="party" name="party" type="number" min="1" max="${MAX_PARTY}" step="1" required value="${DEFAULT_PARTY}"></div>
       <div class="g-field"><label for="bn">${t('book.name')}</label><input id="bn" name="name" maxlength="40" value="${session.customer.name}"></div>
       <div class="g-field"><label for="bnote">${t('book.note')}</label><textarea id="bnote" name="note" maxlength="200" placeholder="${t('book.notePh')}"></textarea></div>
@@ -119,7 +125,7 @@ export async function mountBooking(root, { company, store, stores, navigate }) {
       try {
         await post('/api/guest/bookings', {
           company, store: f.store ? f.store.value : store, eta: new Date(f.eta.value).getTime(), partySize: Number(f.party.value),
-          name: f.name.value, note: f.note.value,
+          name: f.name.value, note: f.note.value, ...(event ? { eventId: event.id } : {}),
         });
         toast(t('book.done'), 'success');
         navigate(`/g/${company}/account`);

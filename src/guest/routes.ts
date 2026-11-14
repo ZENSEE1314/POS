@@ -15,10 +15,16 @@ import type { IdentityProviders, LoginProvider } from './identity.ts';
 import { LOGIN_PROVIDERS } from './identity.ts';
 import type { SmsSender } from './sms.ts';
 import {
-  accountAt, cancelGuestBooking, cancelGuestOrder, createGuestBooking, guestOrder, markPaymentFailed, menu, paymentStatus, payFromWallet,
+  accountAt, cancelGuestBooking, cancelGuestOrder, createGuestBooking, giftTables, guestOrder, markPaymentFailed, menu, paymentStatus, payFromWallet,
   placeOrder, reserveGuestPayment, tableBill, tableInfo, venueInfo,
 } from './venue.ts';
 import { acceptGuestOrder, listGuestOrders, pendingGuestOrderCount, rejectGuestOrder, renewTableQr } from './staff.ts';
+import { cancelRequest, createRequest, decideRequest, listGuestRequests, listPets, myRequests, removePet, savePet } from './requests.ts';
+import {
+  checkVoucher, claimReferral, listPrizes, listRewards, loyaltyAt, redeemReward, savePrize, saveReward, spinWheel, useVoucher,
+} from './loyalty.ts';
+import { listEvents, saveEvent, upcomingEvents } from './events.ts';
+import { guestSettings, updateGuestSettings } from './settings.ts';
 
 const HOUR_MS = 60 * 60_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -99,6 +105,7 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
   route('GET', '/api/guest/venue/:company', false, ({ db, params }) => venueInfo(db, params[0]));
   route('GET', '/api/guest/venue/:company/:store/menu', false, ({ db, params }) => menu(db, params[0], params[1]));
   route('GET', '/api/guest/table/:token', false, ({ db, params }) => tableInfo(db, params[0]));
+  route('GET', '/api/guest/events/:company', false, ({ db, params }) => upcomingEvents(db, params[0]));
 
   // ---- sign-in with WeChat / Alipay / Douyin: start -> provider -> callback -> one-time code in the URL fragment ----
   route('GET', '/api/guest/auth/:provider/start', false, async ({ db, params, query }) => {
@@ -213,6 +220,50 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
     await cancelGuestBooking(db, id, num(params[0]));
     return { ok: true };
   }));
+
+  route('GET', '/api/guest/table/:token/tables', false, signedIn(({ db, params }) => giftTables(db, params[0])));
+
+  route('POST', '/api/guest/requests', false, signedIn(({ db, body }, id) => createRequest(db, id, body)));
+  route('GET', '/api/guest/requests/:company', false, signedIn(({ db, params }, id) => myRequests(db, id, params[0])));
+  route('POST', '/api/guest/requests/:id/cancel', false, signedIn(async ({ db, params }, id) => {
+    await cancelRequest(db, id, num(params[0]));
+    return { ok: true };
+  }));
+
+  route('GET', '/api/guest/loyalty/:company', false, signedIn(({ db, params }, id) => loyaltyAt(db, id, params[0])));
+  route('POST', '/api/guest/loyalty/:company/redeem', false, signedIn(({ db, params, body }, id) => redeemReward(db, id, params[0], body.rewardId)));
+  route('POST', '/api/guest/loyalty/:company/spin', false, signedIn(({ db, params }, id) => spinWheel(db, id, params[0])));
+  route('POST', '/api/guest/referral', false, signedIn(({ db, body }, id) => claimReferral(db, id, body.company, body.code)));
+
+  route('GET', '/api/guest/pets', false, signedIn(({ db }, id) => listPets(db, id)));
+  route('POST', '/api/guest/pets', false, signedIn(({ db, body }, id) => savePet(db, id, null, body)));
+  route('PATCH', '/api/guest/pets/:id', false, signedIn(({ db, params, body }, id) => savePet(db, id, num(params[0]), body)));
+  route('POST', '/api/guest/pets/:id/remove', false, signedIn(async ({ db, params }, id) => {
+    await removePet(db, id, num(params[0]));
+    return { ok: true };
+  }));
+
+  // ---- staff: guest requests, vouchers, customer app settings, rewards, wheel prizes, events ----
+  route('GET', '/api/guest-requests', true, ({ db, actor, query }) => listGuestRequests(db, actor, query.get('status') ?? 'pending'));
+  for (const outcome of ['done', 'declined'] as const) {
+    route('POST', `/api/guest-requests/:id/${outcome === 'done' ? 'done' : 'decline'}`, true, async ({ db, actor, params, body }) => {
+      await decideRequest(db, actor, num(params[0]), outcome, body.reply);
+      return { ok: true };
+    });
+  }
+  route('GET', '/api/vouchers/:code', true, ({ db, actor, params }) => checkVoucher(db, actor, params[0]));
+  route('POST', '/api/vouchers/:code/use', true, ({ db, actor, params }) => useVoucher(db, actor, params[0]));
+  route('GET', '/api/guest-settings', true, ({ db, actor }) => guestSettings(db, actor.tenantId));
+  route('PATCH', '/api/guest-settings', true, ({ db, actor, body }) => updateGuestSettings(db, actor, body));
+  route('GET', '/api/loyalty-rewards', true, ({ db, actor }) => listRewards(db, actor));
+  route('POST', '/api/loyalty-rewards', true, ({ db, actor, body }) => saveReward(db, actor, null, body));
+  route('PATCH', '/api/loyalty-rewards/:id', true, ({ db, actor, params, body }) => saveReward(db, actor, num(params[0]), body));
+  route('GET', '/api/spin-prizes', true, ({ db, actor }) => listPrizes(db, actor));
+  route('POST', '/api/spin-prizes', true, ({ db, actor, body }) => savePrize(db, actor, null, body));
+  route('PATCH', '/api/spin-prizes/:id', true, ({ db, actor, params, body }) => savePrize(db, actor, num(params[0]), body));
+  route('GET', '/api/venue-events', true, ({ db, actor }) => listEvents(db, actor));
+  route('POST', '/api/venue-events', true, ({ db, actor, body }) => saveEvent(db, actor, null, body));
+  route('PATCH', '/api/venue-events/:id', true, ({ db, actor, params, body }) => saveEvent(db, actor, num(params[0]), body));
 
   // ---- staff: handle guest orders, renew table QR codes ----
   route('GET', '/api/guest-orders', true, ({ db, actor, query }) => listGuestOrders(db, actor, query.get('status') ?? 'pending'));
