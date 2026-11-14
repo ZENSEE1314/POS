@@ -2,7 +2,7 @@ import type { Db } from './db.ts';
 import { audit, DomainError } from './db.ts';
 import type { Actor } from './auth.ts';
 import { whoOf } from './auth.ts';
-import { addLine, attachMember, openCounterSale, openTable, totals } from './bills.ts';
+import { addLine, attachMember, openCounterSale, openTable, setDiscount, totals, voidLine } from './bills.ts';
 import { scanCode } from './retail.ts';
 import { cleanPhone } from './phone.ts';
 import { payInstant } from './payments.ts';
@@ -18,6 +18,7 @@ const MAX_AMOUNT_FEN = 1_000_000_000;
 const MAX_LINE_QTY = 9999;
 const MAX_WEIGHT_G = 1_000_000;
 const MAX_CODE_CHARS = 32;
+const MAX_REASON_CHARS = 200;
 const MAX_PHONE_CHARS = 32;
 const MAX_ID = 1_000_000_000_000_000;
 
@@ -28,8 +29,8 @@ const CLIENT_REF_RE = new RegExp(`^(?:${UUID}|-[1-9]\\d{0,8})$`, 'i');
 const BILL_REF_RE = new RegExp(`^(?:${UUID}|-[1-9]\\d{0,8}|[1-9]\\d{0,14})$`, 'i');
 const REAL_BILL_ID_RE = /^[1-9]\d*$/;
 
-type OpType = 'bill.open' | 'counter.open' | 'bill.addLine' | 'bill.scan' | 'bill.member' | 'bill.pay';
-const OP_TYPES: OpType[] = ['bill.open', 'counter.open', 'bill.addLine', 'bill.scan', 'bill.member', 'bill.pay'];
+type OpType = 'bill.open' | 'counter.open' | 'bill.addLine' | 'bill.scan' | 'bill.member' | 'bill.void' | 'bill.discount' | 'bill.pay';
+const OP_TYPES: OpType[] = ['bill.open', 'counter.open', 'bill.addLine', 'bill.scan', 'bill.member', 'bill.void', 'bill.discount', 'bill.pay'];
 /** Ops that create a bill and carry the client's ref for it. */
 const OPENS_BILL: OpType[] = ['bill.open', 'counter.open'];
 type OpStatus = 'ok' | 'conflict' | 'error' | 'skipped';
@@ -73,6 +74,12 @@ function parsePayload(type: OpType, at: string, p: unknown): Record<string, any>
   const billRef = () => {
     if (typeof x.billRef !== 'string' || !BILL_REF_RE.test(x.billRef)) bad(`${at}: billRef is not a valid bill reference`);
   };
+  const lineRef = () => {
+    if (x.lineRef !== undefined && (typeof x.lineRef !== 'string' || !UUID_RE.test(x.lineRef))) bad(`${at}: lineRef must be a uuid`);
+  };
+  const reason = () => {
+    if (typeof x.reason !== 'string' || !x.reason.trim() || x.reason.length > MAX_REASON_CHARS) bad(`${at}: reason is required (max ${MAX_REASON_CHARS} characters)`);
+  };
   const phone = (required: boolean) => {
     if (x.phone === undefined && !required) return;
     if (typeof x.phone !== 'string' || x.phone.length > MAX_PHONE_CHARS) bad(`${at}: phone must be a short string`);
@@ -84,10 +91,25 @@ function parsePayload(type: OpType, at: string, p: unknown): Record<string, any>
       phone(false);
       return x;
     case 'bill.scan':
-      onlyKeys(x, ['billRef', 'code', 'qty'], at);
+      onlyKeys(x, ['billRef', 'code', 'qty', 'lineRef'], at);
       billRef();
+      lineRef();
       if (typeof x.code !== 'string' || !x.code || x.code.length > MAX_CODE_CHARS) bad(`${at}: code must be a barcode`);
       if (!isInt(x.qty, 1, MAX_LINE_QTY)) bad(`${at}: qty must be an integer from 1 to ${MAX_LINE_QTY}`);
+      return x;
+    case 'bill.void':
+      onlyKeys(x, ['billRef', 'lineRef', 'lineId', 'reason'], at);
+      billRef();
+      lineRef();
+      if (x.lineId !== undefined && !isInt(x.lineId, 1, MAX_ID)) bad(`${at}: lineId must be a positive integer`);
+      if ((x.lineRef === undefined) === (x.lineId === undefined)) bad(`${at}: send either lineRef or lineId`);
+      reason();
+      return x;
+    case 'bill.discount':
+      onlyKeys(x, ['billRef', 'amount', 'reason'], at);
+      billRef();
+      if (!isInt(x.amount, 0, MAX_AMOUNT_FEN)) bad(`${at}: amount must be an integer number of fen`);
+      reason();
       return x;
     case 'bill.member':
       onlyKeys(x, ['billRef', 'phone'], at);
@@ -101,8 +123,9 @@ function parsePayload(type: OpType, at: string, p: unknown): Record<string, any>
       if (x.phone !== undefined && (typeof x.phone !== 'string' || x.phone.length > MAX_PHONE_CHARS)) bad(`${at}: phone must be a short string`);
       return x;
     case 'bill.addLine':
-      onlyKeys(x, ['billRef', 'productId', 'qty', 'weightG'], at);
+      onlyKeys(x, ['billRef', 'productId', 'qty', 'weightG', 'lineRef'], at);
       billRef();
+      lineRef();
       if (!isInt(x.productId, 1, MAX_ID)) bad(`${at}: productId must be a positive integer`);
       if (!isInt(x.qty, 1, MAX_LINE_QTY)) bad(`${at}: qty must be an integer from 1 to ${MAX_LINE_QTY}`);
       if (x.weightG !== undefined && !isInt(x.weightG, 1, MAX_WEIGHT_G)) bad(`${at}: weightG must be whole grams`);
@@ -139,7 +162,7 @@ function parseOps(body: any): SyncOp[] {
 function classify(e: unknown): OpFailure {
   if (e instanceof OpFailure) return e;
   if (e instanceof DomainError) {
-    const stateMoved = e.status === 409 || ((e.status === 404 || e.status === 422) && /product not found|sales rep not found|no product has this barcode/.test(e.message));
+    const stateMoved = e.status === 409 || ((e.status === 404 || e.status === 422) && /product not found|sales rep not found|no product has this barcode|line not found or already void/.test(e.message));
     return new OpFailure(stateMoved ? 'conflict' : 'error', e.message, e.status);
   }
   const code = (e as { code?: unknown } | null)?.code;
@@ -152,6 +175,21 @@ async function resolveBillId(t: Db, actor: Actor, ref: string): Promise<number> 
   const row = await t.one('SELECT bill_id FROM sync_refs WHERE store_id = ? AND client_ref = ?', [actor.storeId, ref]);
   if (!row) throw new OpFailure('skipped', 'the bill this belongs to was never created on the server (its table or sale could not be opened)', 409);
   return row.bill_id;
+}
+
+async function resolveLineId(t: Db, actor: Actor, p: Record<string, any>): Promise<number> {
+  if (p.lineId !== undefined) return p.lineId;
+  const row = await t.one('SELECT line_id FROM sync_line_refs WHERE store_id = ? AND client_ref = ?', [actor.storeId, p.lineRef]);
+  if (!row) throw new OpFailure('skipped', 'the item this void is for was never added on the server', 409);
+  return row.line_id;
+}
+
+/** Remembers which real line an offline line became, so a later offline void can find it. */
+async function claimLineRef(t: Db, actor: Actor, ref: string | undefined, lineId: number): Promise<void> {
+  if (ref === undefined) return;
+  if ((await t.run('INSERT INTO sync_line_refs (store_id, client_ref, line_id) VALUES (?,?,?) ON CONFLICT (store_id, client_ref) DO NOTHING', [actor.storeId, ref, lineId])) === 0) {
+    throw new OpFailure('conflict', 'this line reference was already used by another operation', 409);
+  }
 }
 
 async function claimRef(t: Db, actor: Actor, ref: string, billId: number): Promise<void> {
@@ -174,6 +212,17 @@ async function applyOp(t: Db, actor: Actor, op: SyncOp): Promise<OpResult> {
       const billId = await resolveBillId(t, actor, p.billRef);
       const r = await scanCode(t, actor, billId, p.code, p.qty);
       if ('needsWeight' in r) throw new OpFailure('conflict', 'this item is now sold by weight: add it again with its weight', 409);
+      await claimLineRef(t, actor, p.lineRef, r.lineId);
+      return { opId: op.opId, status: 'ok', billId };
+    }
+    case 'bill.void': {
+      const billId = await resolveBillId(t, actor, p.billRef);
+      await voidLine(t, actor, billId, await resolveLineId(t, actor, p), p.reason.trim());
+      return { opId: op.opId, status: 'ok', billId };
+    }
+    case 'bill.discount': {
+      const billId = await resolveBillId(t, actor, p.billRef);
+      await setDiscount(t, actor, billId, p.amount, p.reason.trim());
       return { opId: op.opId, status: 'ok', billId };
     }
     case 'bill.member': {
@@ -188,7 +237,8 @@ async function applyOp(t: Db, actor: Actor, op: SyncOp): Promise<OpResult> {
     }
     case 'bill.addLine': {
       const billId = await resolveBillId(t, actor, p.billRef);
-      await addLine(t, actor, billId, { productId: p.productId, qty: p.qty, ...(p.weightG !== undefined ? { weightG: p.weightG } : {}) });
+      const lineId = await addLine(t, actor, billId, { productId: p.productId, qty: p.qty, ...(p.weightG !== undefined ? { weightG: p.weightG } : {}) });
+      await claimLineRef(t, actor, p.lineRef, lineId);
       return { opId: op.opId, status: 'ok', billId };
     }
     case 'bill.pay': {

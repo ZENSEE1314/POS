@@ -166,7 +166,7 @@ test('what cannot work offline says "Needs connection" instead of inventing an a
   const id = bill.billId;
   await assert.rejects(emulate('POST', `/api/bills/${id}/lines`, { productId: 3, qty: 1, gift: true, reason: 'vip' }), { message: 'Needs connection' });
   await assert.rejects(emulate('POST', `/api/bills/${id}/pay`, { method: 'member' }), { message: 'Needs connection' });
-  await assert.rejects(emulate('POST', `/api/bills/${id}/discount`, { amount: 1, reason: 'x' }), { message: 'Needs connection' });
+  await assert.rejects(emulate('POST', `/api/bills/${id}/transfer`, { toTableId: 3 }), { message: 'Needs connection' });
   await assert.rejects(emulate('POST', `/api/bills/${id}/pay-online`, { method: 'wechat' }), { message: 'Needs connection' });
   await assert.rejects(emulate('POST', '/api/members/topup', { phone: '1', amount: 1 }), { message: 'Needs connection' });
   await assert.rejects(emulate('GET', '/api/reports/daily?from=0'), { message: 'Needs connection' });

@@ -228,6 +228,8 @@ export function describeOp(op) {
     case 'bill.addLine': return t('sync.what.line', { qty: m.qty, product: m.productName, table });
     case 'bill.scan': return t('sync.what.label', { product: m.productName, table });
     case 'bill.member': return t('sync.what.member', { phone: m.phone, table });
+    case 'bill.void': return t('sync.what.void', { qty: m.qty, product: m.productName, table });
+    case 'bill.discount': return t('sync.what.discount', { amount: fmtMoney(m.amount ?? 0), table });
     default: return t('sync.what.pay', { amount: fmtMoney(m.amount ?? 0), method: m.method === 'credit' ? t('pay.credit') : t('pay.cash'), table });
   }
 }
@@ -236,7 +238,7 @@ export function explainOp(op) {
   const r = op.result ?? {};
   const reason = errorText({ message: r.message ?? '' });
   if (r.status === 'ok') return t('sync.why.price', { reason });
-  if (r.status === 'skipped') return t('sync.why.skipped');
+  if (r.status === 'skipped') return t(op.type === 'bill.void' && r.message?.includes('never added') ? 'sync.why.skippedVoid' : 'sync.why.skipped');
   return reason || t('sync.why.unknown');
 }
 

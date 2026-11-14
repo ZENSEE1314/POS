@@ -401,6 +401,15 @@ const MIGRATIONS: Array<{ id: number; statements: string[] }> = [
       'ALTER TABLE guest_order_items ADD COLUMN IF NOT EXISTS weight_g INT CHECK (weight_g > 0)',
     ],
   },
+  {
+    // Offline voids: a line added offline carries a client ref, mapped here to its real line once it syncs.
+    id: 9,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS sync_line_refs (
+        store_id BIGINT NOT NULL REFERENCES stores(id), client_ref TEXT NOT NULL, line_id BIGINT NOT NULL REFERENCES bill_lines(id),
+        UNIQUE (store_id, client_ref))`,
+    ],
+  },
 ];
 
 async function migrate(db: Db): Promise<void> {

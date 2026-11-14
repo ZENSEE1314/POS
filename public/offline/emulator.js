@@ -21,8 +21,10 @@ const FP_SEED = 0x1b873593;
 
 /** Endpoints whose responses are cached while online and replayed offline (exact path, no query string). */
 const CACHED_GETS = ['/api/tables', '/api/products', '/api/reps', '/api/me', '/api/config', '/api/shifts/current', COUNTER_SALES];
-const BILL_PATH = /^\/api\/bills\/(-?\d+)(?:\/(lines|pay|scan|member))?$/;
-const BILL_POST = /^\/api\/bills\/-?\d+\/(lines|pay|scan|member)$/;
+// Groups: 1 bill id, 2 bill action, 3 line id and 4 "void" for a line void.
+const BILL_PATH = /^\/api\/bills\/(-?\d+)(?:\/(lines|pay|scan|member|discount)|\/lines\/(-?\d+)\/(void))?$/;
+const BILL_POST = /^\/api\/bills\/-?\d+\/(?:lines|pay|scan|member|discount|lines\/-?\d+\/void)$/;
+const MAX_REASON_CHARS = 200;
 
 const needsConnection = () => new ApiError(t('offline.needsConnection'), 0);
 const fail = (message, status) => new ApiError(message, status);
@@ -217,11 +219,13 @@ async function cachedProducts() {
 /** Adds one sale line to the working copy and queues the op that will add it on the server. */
 async function pushLine(copy, s, p, { qty, weightG = null, unitPrice, note }, op) {
   const lineId = Math.min(0, ...copy.lines.map((l) => l.id)) - 1;
+  // The client ref lets a later offline void name this line before the server has given it an id.
+  const lineRef = newId();
   copy.lines.push({
     id: lineId, bill_id: copy.billId, product_id: p.id, name: p.name, qty, unit_price: unitPrice, kind: 'sale', status: 'active', reason: null,
-    waiter_id: app.actor.id, created_at: Date.now(), weight_g: weightG, price_note: note,
+    waiter_id: app.actor.id, created_at: Date.now(), weight_g: weightG, price_note: note, client_ref: lineRef,
   });
-  await enqueue(s, copy, op.type, { billRef: copy.ref, ...op.payload }, { productName: p.name, qty, ...(weightG ? { weightG } : {}) });
+  await enqueue(s, copy, op.type, { billRef: copy.ref, ...op.payload, lineRef }, { productName: p.name, qty, ...(weightG ? { weightG } : {}) });
   return { lineId, productId: p.id };
 }
 
@@ -330,6 +334,47 @@ async function pay(billId, body) {
   });
 }
 
+const cleanReason = (body) => {
+  const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+  if (!reason || reason.length > MAX_REASON_CHARS) throw fail(`a reason is required (max ${MAX_REASON_CHARS} characters)`, 422);
+  return reason;
+};
+
+/** Same rule as the server: a void or discount may not leave the bill overpaid; landing exactly on the paid amount completes it. */
+function reconcileAfterReduction(copy) {
+  const tot = computeTotals(copy.bill, copy.lines, copy.payments);
+  if (tot.paid > tot.total) throw fail('this would drop the bill below what has already been paid', 409);
+  if (tot.paid > 0 && tot.due === 0) Object.assign(copy.bill, { status: 'settled', closed_at: Date.now() });
+}
+
+async function voidLine(billId, lineId, body) {
+  need('order.void');
+  const reason = cleanReason(body);
+  return mutateBill(billId, async (copy, s) => {
+    const line = copy.lines.find((l) => l.id === lineId && l.status === 'active');
+    if (!line) throw fail('line not found or already void', 404);
+    // A line added offline by an older version of the app has no ref the server could match.
+    if (line.id < 0 && !line.client_ref) throw needsConnection();
+    Object.assign(line, { status: 'void', reason });
+    reconcileAfterReduction(copy);
+    const target = line.id < 0 ? { lineRef: line.client_ref } : { lineId: line.id };
+    await enqueue(s, copy, 'bill.void', { billRef: copy.ref, ...target, reason }, { productName: line.name, qty: line.qty });
+    return { ok: true };
+  });
+}
+
+async function setDiscount(billId, body) {
+  need('bill.discount');
+  if (!Number.isSafeInteger(body.amount) || body.amount < 0) throw fail('discount must be a non-negative integer (fen)', 422);
+  const reason = cleanReason(body);
+  return mutateBill(billId, async (copy, s) => {
+    copy.bill.discount = body.amount;
+    reconcileAfterReduction(copy);
+    await enqueue(s, copy, 'bill.discount', { billRef: copy.ref, amount: body.amount, reason }, { amount: body.amount });
+    return { ok: true };
+  });
+}
+
 // ---------- reads ----------
 
 async function cachedGet(path) {
@@ -393,7 +438,8 @@ export async function emulate(method, path, body = {}) {
   const m = BILL_PATH.exec(p);
   const billId = Number(m[1]);
   if (method === 'GET') return readBill(billId);
-  const handler = { lines: addLine, pay, scan, member: attachMember }[m[2]];
+  if (m[4]) return voidLine(billId, Number(m[3]), body);
+  const handler = { lines: addLine, pay, scan, member: attachMember, discount: setDiscount }[m[2]];
   return handler(billId, body);
 }
 
@@ -430,7 +476,7 @@ export async function afterNetwork(method, path, data) {
       return data;
     }
     const m = BILL_PATH.exec(p);
-    if (m && !m[2]) {
+    if (m && !m[2] && !m[4]) {
       const key = billCacheKey(Number(m[1]));
       if (key) {
         if (data.bill.status === 'open') await setValue(key, data); else await deleteValue(key);
