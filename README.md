@@ -8,7 +8,7 @@ WeChat Pay, Alipay and Douyin (抖音来客) integrations; Postgres; self-monito
 ```bash
 npm install
 node scripts/dev.ts          # http://localhost:3500: simulated payments + demo company (dev only)
-npm test                     # 539 tests on embedded Postgres (PGlite); on a low-memory machine use --test-concurrency=1
+npm test                     # 545 tests on embedded Postgres (PGlite); on a low-memory machine use --test-concurrency=1
 node scripts/test-pg.ts      # same suite through the production `pg` driver over the Postgres wire protocol
 node scripts/simulate.ts http://localhost:3500 dev-admin-key 4 25   # multi-company load simulation + books audit
 ```
@@ -162,6 +162,7 @@ Store staff are pinned to one store; `owner` and `finance` are company-wide and 
 ## Offline mode
 The till keeps trading when the internet drops. A service worker (`public/sw.js`) precaches the whole app shell, so the page even reloads with no network; API calls are never cached by it.
 - **Works offline:** see tables, products and sales reps (last copy seen online, per store); open a table; add items; take **cash** or **on-account (credit)** payments. Tables opened before the outage keep working too. A bill paid in full offline is settled locally and its table shows free.
+- **Counter sales work offline too** (Checkout tab): start a sale, tap or scan items (product barcodes, items sold per kg with their weight, shop scale labels), add a member (member prices apply at once) and take cash or on-account payment. Sales started before the outage keep working. A sale started offline shows without a number until it syncs, then takes its real number in place. Running promotions are not known offline: the till charges list or member price, and if the server's price is lower the payment is flagged with `priceDiffFen` like any other price change.
 - **Needs a connection** (shows "Needs connection" / 需要联网): gifts, voids, discounts, table transfer, WeChat/Alipay, member wallet, Douyin vouchers, top-ups, stash, bookings, reports, admin and HQ, shift open/close, signing in.
 - Everything done offline is queued in IndexedDB on the device (survives reloads and closed tabs) and replayed in order to `POST /api/sync` when the connection returns. The header pill shows Online / Offline: N pending / Syncing / Needs attention; click it for details, Retry and Dismiss.
 - **Conflict rules (server decides):** a table someone else opened online in the meantime is a conflict and the offline items/payments for it are **not** attached to the other bill (they are listed as "not recorded" so the cash can be reconciled by hand). Retired products and inactive reps are conflicts. The server always uses its current prices; if the bill at sync time differs from what the cashier saw, the payment applies `min(collected, due)` and the op carries a `priceDiffFen` warning. Every op is idempotent (a replay changes nothing) and goes through the same rules, permissions and audit as the online API, plus a `sync.*` audit entry marked `offline: true`. Offline bills and payments are flagged (`bills.offline`, `payments.offline`); offline cash joins the cashier's shift that is open **at sync time**.

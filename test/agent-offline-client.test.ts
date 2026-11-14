@@ -34,7 +34,9 @@ async function signInAndWarmCache(who: string): Promise<void> {
   await clearAll();
   Object.assign(app, { token: tok[who], actor: actors[who] });
   for (const path of ['/api/tables', '/api/products', '/api/reps', '/api/me']) {
-    await afterNetwork('GET', path, (await call('GET', path, undefined, tok[who])).json);
+    const data = (await call('GET', path, undefined, tok[who])).json;
+    if (path === '/api/me') app.business = data.business;
+    await afterNetwork('GET', path, data);
   }
 }
 

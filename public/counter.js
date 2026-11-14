@@ -8,13 +8,14 @@ import { S } from './floor-state.js';
 import { billHtml, productTiles } from './bill-view.js';
 import { createBillActions } from './bill-actions.js';
 import { shiftHtml, loadShift, openShiftDialog, closeShiftDialog } from './shift.js';
+import { SYNCED_EVENT, realBillId } from './offline/index.js';
 
 const REFRESH_MS = 10000;
 const WIDE_QUERY = '(min-width: 1024px)';
 
 function saleCard(b) {
   return html`<button type="button" class="table table--occupied" data-action="pickSale" data-id="${b.id}" aria-pressed="${pressed(b.id === S.billId)}">
-    <span class="table__name">${t(`channel.${b.channel}`)} #${b.id}</span>
+    <span class="table__name">${t(`channel.${b.channel}`)}${b.id > 0 ? ` #${b.id}` : ''}</span>
     <span class="table__meta">${fmtTime(b.openedAt)} · ${t('counter.lines', { n: b.lines })}${b.memberPhone ? ` · ${b.memberPhone}` : ''}</span>
     <span class="table__money">${t('floor.billTotal')} <strong>${fmtMoney(b.total)}</strong></span>
   </button>`;
@@ -103,7 +104,21 @@ export function mountCounter(root) {
     submit: billActions.handlers.submit,
   });
 
+  // Offline sales just reached the server: a sale started offline now has a real id, and totals may have changed.
+  const onSynced = async () => {
+    try {
+      if (S.billId !== null && S.billId < 0) {
+        S.billId = (await realBillId(S.billId)) ?? null;
+        S.bill = null;
+      }
+      await loadBoard();
+      if (S.billId) await loadBill();
+      renderBill();
+    } catch { /* the next refresh will retry */ }
+  };
+
   init().catch(notifyError);
   const timer = setInterval(() => { if (!document.hidden) loadBoard().catch(() => {}); }, REFRESH_MS);
-  return () => { clearInterval(timer); billActions.stopPolling(); };
+  window.addEventListener(SYNCED_EVENT, onSynced);
+  return () => { clearInterval(timer); billActions.stopPolling(); window.removeEventListener(SYNCED_EVENT, onSynced); };
 }

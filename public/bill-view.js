@@ -147,12 +147,14 @@ export function billHtml(S) {
   const rep = S.staff.find((s) => s.id === bill.rep_id);
   const products = byId(S.products);
   const onTable = bill.table_id != null;
-  const title = onTable ? table?.name ?? `#${bill.table_id}` : `${t(`channel.${bill.channel}`)} #${bill.id}`;
+  // A sale started offline has a temporary negative id until it syncs; showing "#-1" would only confuse.
+  const title = onTable ? table?.name ?? `#${bill.table_id}` : `${t(`channel.${bill.channel}`)}${bill.id > 0 ? ` #${bill.id}` : ''}`;
+  const metaKey = bill.id < 0 ? (onTable ? 'floor.offlineBillMeta' : 'counter.offlineBillMeta') : hasModule('reps') ? 'floor.billMeta' : 'counter.billMeta';
   return html`<header class="bill__head">
       <button type="button" class="btn btn--small btn--ghost bill__back" data-action="backToBoard">↑ ${onTable ? t('floor.tables') : t('counter.open')}</button>
       <div><h2 class="bill__title">${title}</h2>
         ${bill.member_phone && html`<p class="muted">${t('counter.memberOn', { phone: bill.member_phone })}</p>`}
-        <p class="muted">${t(bill.id < 0 ? 'floor.offlineBillMeta' : hasModule('reps') ? 'floor.billMeta' : 'counter.billMeta', { id: bill.id, time: fmtDateTime(bill.opened_at), rep: rep?.name ?? `#${bill.rep_id}` })}</p></div>
+        <p class="muted">${t(metaKey, { id: bill.id, time: fmtDateTime(bill.opened_at), rep: rep?.name ?? `#${bill.rep_id}` })}</p></div>
       ${open ? badge(t('floor.billOpen'), 'warning', '●') : badge(t('floor.billSettled'), 'success', '✓')}
     </header>
     <div class="row bill__tools">

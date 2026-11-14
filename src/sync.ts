@@ -2,7 +2,9 @@ import type { Db } from './db.ts';
 import { audit, DomainError } from './db.ts';
 import type { Actor } from './auth.ts';
 import { whoOf } from './auth.ts';
-import { addLine, openTable, totals } from './bills.ts';
+import { addLine, attachMember, openCounterSale, openTable, totals } from './bills.ts';
+import { scanCode } from './retail.ts';
+import { cleanPhone } from './phone.ts';
 import { payInstant } from './payments.ts';
 import { logEvent } from './ops.ts';
 
@@ -14,17 +16,22 @@ import { logEvent } from './ops.ts';
 export const MAX_SYNC_OPS = 200;
 const MAX_AMOUNT_FEN = 1_000_000_000;
 const MAX_LINE_QTY = 9999;
+const MAX_WEIGHT_G = 1_000_000;
+const MAX_CODE_CHARS = 32;
 const MAX_PHONE_CHARS = 32;
 const MAX_ID = 1_000_000_000_000_000;
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const UUID_RE = new RegExp(`^${UUID}$`, 'i');
-/** A client bill ref is a uuid or a negative temp id; a billRef may also be a positive real bill id (a table opened before the outage). */
+/** A client bill ref is a uuid or a negative temp id; a billRef may also be a positive real bill id (a bill opened before the outage). */
 const CLIENT_REF_RE = new RegExp(`^(?:${UUID}|-[1-9]\\d{0,8})$`, 'i');
 const BILL_REF_RE = new RegExp(`^(?:${UUID}|-[1-9]\\d{0,8}|[1-9]\\d{0,14})$`, 'i');
 const REAL_BILL_ID_RE = /^[1-9]\d*$/;
 
-type OpType = 'bill.open' | 'bill.addLine' | 'bill.pay';
+type OpType = 'bill.open' | 'counter.open' | 'bill.addLine' | 'bill.scan' | 'bill.member' | 'bill.pay';
+const OP_TYPES: OpType[] = ['bill.open', 'counter.open', 'bill.addLine', 'bill.scan', 'bill.member', 'bill.pay'];
+/** Ops that create a bill and carry the client's ref for it. */
+const OPENS_BILL: OpType[] = ['bill.open', 'counter.open'];
 type OpStatus = 'ok' | 'conflict' | 'error' | 'skipped';
 
 interface SyncOp { opId: string; type: OpType; ref?: string; clientTs?: number; payload: Record<string, any> }
@@ -63,7 +70,30 @@ function onlyKeys(obj: Record<string, unknown>, allowed: string[], where: string
 function parsePayload(type: OpType, at: string, p: unknown): Record<string, any> {
   if (p === null || typeof p !== 'object' || Array.isArray(p)) return bad(`${at}: payload must be an object`);
   const x = p as Record<string, any>;
+  const billRef = () => {
+    if (typeof x.billRef !== 'string' || !BILL_REF_RE.test(x.billRef)) bad(`${at}: billRef is not a valid bill reference`);
+  };
+  const phone = (required: boolean) => {
+    if (x.phone === undefined && !required) return;
+    if (typeof x.phone !== 'string' || x.phone.length > MAX_PHONE_CHARS) bad(`${at}: phone must be a short string`);
+  };
   switch (type) {
+    case 'counter.open':
+      onlyKeys(x, ['repId', 'phone'], at);
+      if (x.repId !== undefined && !isInt(x.repId, 1, MAX_ID)) bad(`${at}: repId must be a positive integer`);
+      phone(false);
+      return x;
+    case 'bill.scan':
+      onlyKeys(x, ['billRef', 'code', 'qty'], at);
+      billRef();
+      if (typeof x.code !== 'string' || !x.code || x.code.length > MAX_CODE_CHARS) bad(`${at}: code must be a barcode`);
+      if (!isInt(x.qty, 1, MAX_LINE_QTY)) bad(`${at}: qty must be an integer from 1 to ${MAX_LINE_QTY}`);
+      return x;
+    case 'bill.member':
+      onlyKeys(x, ['billRef', 'phone'], at);
+      billRef();
+      phone(true);
+      return x;
     case 'bill.open':
       onlyKeys(x, ['tableId', 'repId', 'phone'], at);
       if (!isInt(x.tableId, 1, MAX_ID)) bad(`${at}: tableId must be a positive integer`);
@@ -71,14 +101,15 @@ function parsePayload(type: OpType, at: string, p: unknown): Record<string, any>
       if (x.phone !== undefined && (typeof x.phone !== 'string' || x.phone.length > MAX_PHONE_CHARS)) bad(`${at}: phone must be a short string`);
       return x;
     case 'bill.addLine':
-      onlyKeys(x, ['billRef', 'productId', 'qty'], at);
-      if (typeof x.billRef !== 'string' || !BILL_REF_RE.test(x.billRef)) bad(`${at}: billRef is not a valid bill reference`);
+      onlyKeys(x, ['billRef', 'productId', 'qty', 'weightG'], at);
+      billRef();
       if (!isInt(x.productId, 1, MAX_ID)) bad(`${at}: productId must be a positive integer`);
       if (!isInt(x.qty, 1, MAX_LINE_QTY)) bad(`${at}: qty must be an integer from 1 to ${MAX_LINE_QTY}`);
+      if (x.weightG !== undefined && !isInt(x.weightG, 1, MAX_WEIGHT_G)) bad(`${at}: weightG must be whole grams`);
       return x;
     case 'bill.pay':
       onlyKeys(x, ['billRef', 'method', 'amount', 'expectedDue'], at);
-      if (typeof x.billRef !== 'string' || !BILL_REF_RE.test(x.billRef)) bad(`${at}: billRef is not a valid bill reference`);
+      billRef();
       if (x.method !== 'cash' && x.method !== 'credit') bad(`${at}: method must be cash or credit (other methods need a connection)`);
       if (!isInt(x.amount, 0, MAX_AMOUNT_FEN)) bad(`${at}: amount must be an integer number of fen`);
       if (x.expectedDue !== undefined && !isInt(x.expectedDue, 0, MAX_AMOUNT_FEN)) bad(`${at}: expectedDue must be an integer number of fen`);
@@ -95,11 +126,11 @@ function parseOps(body: any): SyncOp[] {
     if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return bad(`${at} must be an object`);
     onlyKeys(raw, ['opId', 'type', 'ref', 'ts', 'payload'], at);
     if (typeof raw.opId !== 'string' || !UUID_RE.test(raw.opId)) bad(`${at}: opId must be a uuid`);
-    if (raw.type !== 'bill.open' && raw.type !== 'bill.addLine' && raw.type !== 'bill.pay') bad(`${at}: unknown type`);
+    if (!OP_TYPES.includes(raw.type)) bad(`${at}: unknown type`);
     if (raw.ts !== undefined && !isInt(raw.ts, 0, Number.MAX_SAFE_INTEGER)) bad(`${at}: ts must be epoch milliseconds`);
-    if (raw.type === 'bill.open') {
+    if (OPENS_BILL.includes(raw.type)) {
       if (typeof raw.ref !== 'string' || !CLIENT_REF_RE.test(raw.ref)) bad(`${at}: ref must be a uuid or a negative temp id`);
-    } else if (raw.ref !== undefined) bad(`${at}: ref is only valid on bill.open`);
+    } else if (raw.ref !== undefined) bad(`${at}: ref is only valid on ops that open a bill`);
     return { opId: raw.opId.toLowerCase(), type: raw.type, ref: raw.ref, clientTs: raw.ts, payload: parsePayload(raw.type, at, raw.payload) };
   });
 }
@@ -108,7 +139,7 @@ function parseOps(body: any): SyncOp[] {
 function classify(e: unknown): OpFailure {
   if (e instanceof OpFailure) return e;
   if (e instanceof DomainError) {
-    const stateMoved = e.status === 409 || ((e.status === 404 || e.status === 422) && /product not found|sales rep not found/.test(e.message));
+    const stateMoved = e.status === 409 || ((e.status === 404 || e.status === 422) && /product not found|sales rep not found|no product has this barcode/.test(e.message));
     return new OpFailure(stateMoved ? 'conflict' : 'error', e.message, e.status);
   }
   const code = (e as { code?: unknown } | null)?.code;
@@ -119,24 +150,45 @@ function classify(e: unknown): OpFailure {
 async function resolveBillId(t: Db, actor: Actor, ref: string): Promise<number> {
   if (REAL_BILL_ID_RE.test(ref)) return Number(ref);
   const row = await t.one('SELECT bill_id FROM sync_refs WHERE store_id = ? AND client_ref = ?', [actor.storeId, ref]);
-  if (!row) throw new OpFailure('skipped', 'the bill this belongs to was never created on the server (its table could not be opened)', 409);
+  if (!row) throw new OpFailure('skipped', 'the bill this belongs to was never created on the server (its table or sale could not be opened)', 409);
   return row.bill_id;
+}
+
+async function claimRef(t: Db, actor: Actor, ref: string, billId: number): Promise<void> {
+  if ((await t.run('INSERT INTO sync_refs (store_id, client_ref, bill_id) VALUES (?,?,?) ON CONFLICT (store_id, client_ref) DO NOTHING', [actor.storeId, ref, billId])) === 0) {
+    throw new OpFailure('conflict', 'this bill reference was already used by another operation', 409);
+  }
+  await t.run('UPDATE bills SET offline = TRUE WHERE id = ?', [billId]);
 }
 
 async function applyOp(t: Db, actor: Actor, op: SyncOp): Promise<OpResult> {
   const p = op.payload;
   switch (op.type) {
+    case 'counter.open': {
+      const billId = await openCounterSale(t, actor, { repId: p.repId, phone: p.phone });
+      await claimRef(t, actor, op.ref!, billId);
+      return { opId: op.opId, status: 'ok', billId };
+    }
+    case 'bill.scan': {
+      // Only scale labels are queued as scans (their price comes from the label itself); plain barcodes arrive as bill.addLine.
+      const billId = await resolveBillId(t, actor, p.billRef);
+      const r = await scanCode(t, actor, billId, p.code, p.qty);
+      if ('needsWeight' in r) throw new OpFailure('conflict', 'this item is now sold by weight: add it again with its weight', 409);
+      return { opId: op.opId, status: 'ok', billId };
+    }
+    case 'bill.member': {
+      const billId = await resolveBillId(t, actor, p.billRef);
+      await attachMember(t, actor, billId, cleanPhone(p.phone));
+      return { opId: op.opId, status: 'ok', billId };
+    }
     case 'bill.open': {
       const billId = await openTable(t, actor, { tableId: p.tableId, repId: p.repId, phone: p.phone });
-      if ((await t.run('INSERT INTO sync_refs (store_id, client_ref, bill_id) VALUES (?,?,?) ON CONFLICT (store_id, client_ref) DO NOTHING', [actor.storeId, op.ref, billId])) === 0) {
-        throw new OpFailure('conflict', 'this bill reference was already used by another operation', 409);
-      }
-      await t.run('UPDATE bills SET offline = TRUE WHERE id = ?', [billId]);
+      await claimRef(t, actor, op.ref!, billId);
       return { opId: op.opId, status: 'ok', billId };
     }
     case 'bill.addLine': {
       const billId = await resolveBillId(t, actor, p.billRef);
-      await addLine(t, actor, billId, { productId: p.productId, qty: p.qty });
+      await addLine(t, actor, billId, { productId: p.productId, qty: p.qty, ...(p.weightG !== undefined ? { weightG: p.weightG } : {}) });
       return { opId: op.opId, status: 'ok', billId };
     }
     case 'bill.pay': {

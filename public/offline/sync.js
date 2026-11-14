@@ -92,13 +92,13 @@ async function applyResults(sent, results) {
       if (!r) continue;
       if (r.status === 'ok' && !r.priceDiffFen) {
         await s.del('ops', op.seq);
-        if (op.type === 'bill.open' && op.meta?.tempId) await s.put('kv', r.billId, `idmap:${op.meta.tempId}`);
+        if (op.meta?.tempId) await s.put('kv', r.billId, `idmap:${op.meta.tempId}`);
         continue;
       }
       if (r.status === 'ok') {
         // Applied, but with a warning the staff must see (prices changed while offline).
         await s.put('ops', { ...op, status: 'attention', result: r });
-        if (op.type === 'bill.open' && op.meta?.tempId) await s.put('kv', r.billId, `idmap:${op.meta.tempId}`);
+        if (op.meta?.tempId) await s.put('kv', r.billId, `idmap:${op.meta.tempId}`);
         continue;
       }
       await s.put('ops', { ...op, status: 'attention', result: r });
@@ -207,7 +207,7 @@ export async function dismissOp(seq) {
     const all = await s.all('ops');
     const op = all.find((o) => o.seq === seq);
     if (!op) return;
-    const drop = op.type === 'bill.open' ? all.filter((o) => o.seq === seq || (o.status === 'attention' && o.payload.billRef === op.ref)) : [op];
+    const drop = op.ref ? all.filter((o) => o.seq === seq || (o.status === 'attention' && o.payload.billRef === op.ref)) : [op];
     for (const o of drop) await s.del('ops', o.seq);
   });
   notifyChanged();
@@ -224,7 +224,10 @@ export function describeOp(op) {
   const table = m.tableName ?? '?';
   switch (op.type) {
     case 'bill.open': return t('sync.what.open', { table });
+    case 'counter.open': return t('sync.what.sale');
     case 'bill.addLine': return t('sync.what.line', { qty: m.qty, product: m.productName, table });
+    case 'bill.scan': return t('sync.what.label', { product: m.productName, table });
+    case 'bill.member': return t('sync.what.member', { phone: m.phone, table });
     default: return t('sync.what.pay', { amount: fmtMoney(m.amount ?? 0), method: m.method === 'credit' ? t('pay.credit') : t('pay.cash'), table });
   }
 }
