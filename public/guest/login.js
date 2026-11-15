@@ -74,43 +74,82 @@ function phoneForm(root, { submitLabel, onCode }) {
   form.elements.phone.focus();
 }
 
-/** Phone + password, with a switch between signing in and creating an account. Calls onDone(result) with the session. */
+/** A password input with a show/hide button. */
+const passwordField = (id, name, label, autocomplete, hint = '') => html`<div class="g-field"><label for="${id}">${label}</label>
+  <div class="g-pw"><input id="${id}" name="${name}" type="password" autocomplete="${autocomplete}" maxlength="72" required>
+    <button type="button" class="g-pw__toggle" data-toggle-pw="${id}" aria-controls="${id}" aria-pressed="false">${t('pw.show')}</button></div>
+  ${hint && html`<p class="g-hint">${hint}</p>`}</div>`;
+
+function wirePasswordToggles(root) {
+  root.querySelectorAll('[data-toggle-pw]').forEach((b) => b.addEventListener('click', () => {
+    const input = root.querySelector(`#${b.dataset.togglePw}`);
+    const isShown = input.type === 'text';
+    input.type = isShown ? 'password' : 'text';
+    b.setAttribute('aria-pressed', String(!isShown));
+    b.textContent = t(isShown ? 'pw.show' : 'pw.hide');
+  }));
+}
+
+/** Sign in, register, or set a new password with a reset code. Calls onDone(result) with the new session. */
 function passwordForm(root, onDone) {
   let mode = 'login';
+  const hasSms = Boolean(session.config.login.phone);
   const render = () => {
     const isRegister = mode === 'register';
+    const isReset = mode === 'reset';
     setHtml(root, html`<form novalidate>
-      <div class="g-seg" role="group" aria-label="${t('pw.title')}">
-        <button type="button" aria-pressed="${String(!isRegister)}" data-mode="login">${t('pw.signIn')}</button>
-        <button type="button" aria-pressed="${String(isRegister)}" data-mode="register">${t('pw.register')}</button>
-      </div>
+      ${isReset
+        ? html`<h3 class="g-card__title">${t('pw.resetTitle')}</h3><p class="g-muted g-lead">${t(hasSms ? 'pw.resetWhySms' : 'pw.resetWhy')}</p>`
+        : html`<div class="g-seg" role="group" aria-label="${t('pw.title')}">
+          <button type="button" aria-pressed="${String(!isRegister)}" data-mode="login">${t('pw.signIn')}</button>
+          <button type="button" aria-pressed="${String(isRegister)}" data-mode="register">${t('pw.register')}</button></div>`}
       ${isRegister && html`<div class="g-field"><label for="pwname">${t('pw.name')}</label>
         <input id="pwname" name="name" autocomplete="nickname" maxlength="40"></div>`}
-      <div class="g-field"><label for="pwphone">${t('phone.label')}</label>
-        <input id="pwphone" name="phone" type="tel" inputmode="numeric" autocomplete="username" maxlength="16" placeholder="${t('phone.ph')}" required></div>
-      <div class="g-field"><label for="pw">${t('pw.password')}</label>
-        <input id="pw" name="password" type="password" autocomplete="${isRegister ? 'new-password' : 'current-password'}" minlength="8" maxlength="72" required>
-        ${isRegister && html`<p class="g-hint">${t('pw.rule')}</p>`}</div>
-      ${isRegister && html`<div class="g-field"><label for="pw2">${t('pw.again')}</label>
-        <input id="pw2" name="password2" type="password" autocomplete="new-password" maxlength="72" required></div>`}
+      <div class="g-row">
+        <div class="g-field"><label for="pwphone">${t('phone.label')}</label>
+          <input id="pwphone" name="phone" type="tel" inputmode="numeric" autocomplete="username" maxlength="16" placeholder="${t('phone.ph')}" required></div>
+        ${isReset && hasSms && html`<div class="g-field g-field--fit"><button type="button" class="g-btn" data-send>${t('phone.send')}</button></div>`}
+      </div>
+      ${isReset && html`<div class="g-field"><label for="pwcode">${t(hasSms ? 'pw.codeSms' : 'pw.code')}</label>
+        <input id="pwcode" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required></div>
+        <p class="g-hint" data-dev hidden></p>`}
+      ${passwordField('pw', 'password', t(isReset ? 'pw.new' : 'pw.password'), mode === 'login' ? 'current-password' : 'new-password', mode === 'login' ? '' : t('pw.rule'))}
+      ${mode !== 'login' && passwordField('pw2', 'password2', t('pw.again'), 'new-password')}
       <p class="g-error" role="alert" hidden></p>
-      <button type="submit" class="g-btn g-btn--primary g-btn--block">${t(isRegister ? 'pw.create' : 'pw.signIn')}</button>
+      <button type="submit" class="g-btn g-btn--primary g-btn--block">${t(isReset ? 'pw.setNew' : isRegister ? 'pw.create' : 'pw.signIn')}</button>
+      ${mode === 'login' && html`<button type="button" class="g-link g-gap" data-mode="reset">${t('pw.forgot')}</button>`}
+      ${isReset && html`<button type="button" class="g-link g-gap" data-mode="login">${t('pw.back')}</button>`}
     </form>`);
     const form = root.querySelector('form');
     const errorEl = root.querySelector('.g-error');
     const showError = (msg) => { errorEl.textContent = msg; errorEl.hidden = !msg; };
+    wirePasswordToggles(root);
     root.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { mode = b.dataset.mode; render(); }));
+    root.querySelector('[data-send]')?.addEventListener('click', async (e) => {
+      showError('');
+      try {
+        const r = await post('/api/guest/otp', { phone: form.elements.phone.value });
+        toast(t('phone.sent'), 'success');
+        const devEl = root.querySelector('[data-dev]');
+        if (r.devCode) { devEl.textContent = t('phone.devCode', { code: r.devCode }); devEl.hidden = false; }
+        e.target.disabled = true;
+      } catch (err) {
+        showError(err.message);
+      }
+    });
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       showError('');
       const f = form.elements;
-      if (isRegister && f.password.value !== f.password2.value) { showError(t('pw.mismatch')); return; }
+      if (mode !== 'login' && f.password.value !== f.password2.value) { showError(t('pw.mismatch')); return; }
       const button = form.querySelector('[type=submit]');
       button.disabled = true;
       try {
-        const r = isRegister
-          ? await post('/api/guest/register', { phone: f.phone.value, password: f.password.value, name: f.name.value })
-          : await post('/api/guest/login/password', { phone: f.phone.value, password: f.password.value });
+        let r;
+        if (isRegister) r = await post('/api/guest/register', { phone: f.phone.value, password: f.password.value, name: f.name.value });
+        else if (isReset) r = await post('/api/guest/password/reset', { phone: f.phone.value, code: f.code.value.trim(), password: f.password.value });
+        else r = await post('/api/guest/login/password', { phone: f.phone.value, password: f.password.value });
+        if (isReset) toast(t('pw.changed'), 'success');
         onDone(r);
       } catch (err) {
         showError(err.message);

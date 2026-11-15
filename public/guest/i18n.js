@@ -5,7 +5,7 @@ export const LANGS = ['zh', 'en'];
 const en = {
   'app.name': 'NightPOS', 'lang.zh': '中文', 'lang.en': 'EN', 'lang.label': 'Language',
   'common.close': 'Close', 'common.cancel': 'Cancel', 'common.back': 'Back', 'common.loading': 'Loading', 'common.retry': 'Try again',
-  'err.network': 'Cannot reach the venue right now. Check your connection.', 'err.generic': 'Something went wrong.',
+  'err.network': 'Cannot connect to the server. Check your internet connection and try again.', 'err.generic': 'Something went wrong.',
 
   'landing.eyebrow': 'Bars and clubs', 'landing.title': 'Order, book and pay from your phone',
   'landing.text': 'Scan the QR code on your table, or enter the venue code you were given.',
@@ -49,7 +49,12 @@ const en = {
   'phone.verified': 'Phone verified.',
   'pw.title': 'Phone and password', 'pw.signIn': 'Sign in', 'pw.register': 'Register', 'pw.create': 'Create account',
   'pw.name': 'Your name (optional)', 'pw.password': 'Password', 'pw.again': 'Password again', 'pw.rule': 'At least 8 characters.',
-  'pw.mismatch': 'The two passwords do not match.',
+  'pw.mismatch': 'The two passwords do not match.', 'pw.show': 'Show', 'pw.hide': 'Hide',
+  'pw.forgot': 'Forgot password?', 'pw.back': 'Back to sign in', 'pw.resetTitle': 'Set a new password',
+  'pw.resetWhy': 'Ask a manager at the venue for a reset code. They will check it is you.',
+  'pw.resetWhySms': 'Get a code by SMS, or ask a manager at the venue for a reset code.',
+  'pw.code': 'Reset code from the staff', 'pw.codeSms': 'Code from SMS or staff', 'pw.new': 'New password',
+  'pw.setNew': 'Save new password', 'pw.changed': 'Password changed.',
 
   'account.title': 'My account', 'account.hello': 'Hello, {name}', 'account.guest': 'guest', 'account.signedVia': 'Signed in with {list}',
   'account.phone': 'Phone', 'account.noPhone': 'Not verified', 'account.verify': 'Verify phone', 'account.rename': 'Change name', 'account.name': 'Your name',
@@ -117,7 +122,7 @@ const en = {
 const zh = {
   'app.name': '夜场收银', 'lang.zh': '中文', 'lang.en': 'EN', 'lang.label': '语言',
   'common.close': '关闭', 'common.cancel': '取消', 'common.back': '返回', 'common.loading': '加载中', 'common.retry': '重试',
-  'err.network': '暂时无法连接门店，请检查网络。', 'err.generic': '出了点问题。',
+  'err.network': '无法连接服务器，请检查网络后重试。', 'err.generic': '出了点问题。',
 
   'landing.eyebrow': '酒吧 · 夜店', 'landing.title': '用手机点单、订座、买单',
   'landing.text': '扫描桌上的二维码，或输入门店提供的场所代码。',
@@ -161,7 +166,12 @@ const zh = {
   'phone.verified': '手机号已验证。',
   'pw.title': '手机号和密码', 'pw.signIn': '登录', 'pw.register': '注册', 'pw.create': '创建账户',
   'pw.name': '称呼（选填）', 'pw.password': '密码', 'pw.again': '再次输入密码', 'pw.rule': '至少 8 位。',
-  'pw.mismatch': '两次输入的密码不一致。',
+  'pw.mismatch': '两次输入的密码不一致。', 'pw.show': '显示', 'pw.hide': '隐藏',
+  'pw.forgot': '忘记密码？', 'pw.back': '返回登录', 'pw.resetTitle': '设置新密码',
+  'pw.resetWhy': '请向门店经理索取重置码，经理会先核实您的身份。',
+  'pw.resetWhySms': '可通过短信获取验证码，或向门店经理索取重置码。',
+  'pw.code': '门店提供的重置码', 'pw.codeSms': '短信验证码或重置码', 'pw.new': '新密码',
+  'pw.setNew': '保存新密码', 'pw.changed': '密码已修改。',
 
   'account.title': '我的账户', 'account.hello': '您好，{name}', 'account.guest': '贵宾', 'account.signedVia': '已通过{list}登录',
   'account.phone': '手机号', 'account.noPhone': '未验证', 'account.verify': '验证手机号', 'account.rename': '修改称呼', 'account.name': '称呼',

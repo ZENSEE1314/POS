@@ -420,6 +420,15 @@ const MIGRATIONS: Array<{ id: number; statements: string[] }> = [
         pw_hash TEXT NOT NULL, created_at BIGINT NOT NULL)`,
     ],
   },
+  {
+    // Forgotten guest passwords: a one-time code a venue manager hands the guest in person (when SMS is not set up).
+    id: 11,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS guest_password_resets (
+        phone TEXT PRIMARY KEY, code_hash TEXT NOT NULL, attempts INT NOT NULL DEFAULT 0, expires_at BIGINT NOT NULL,
+        tenant_id BIGINT NOT NULL REFERENCES tenants(id), issued_by BIGINT NOT NULL, created_at BIGINT NOT NULL)`,
+    ],
+  },
 ];
 
 async function migrate(db: Db): Promise<void> {

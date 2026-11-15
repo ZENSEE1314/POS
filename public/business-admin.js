@@ -100,6 +100,6 @@ export function businessAdminSections(reload) {
 
 /** Which admin sections this company sees, given its modules and the signed-in role. */
 export function visibleSectionIds(all, canWriteHq) {
-  const need = { tables: 'tables', rules: 'reps', promotions: 'promotions', guestApp: 'guestApp', events: 'guestApp', rewards: 'guestApp', prizes: 'guestApp' };
+  const need = { tables: 'tables', rules: 'reps', promotions: 'promotions', guestApp: 'guestApp', guestPasswords: 'guestApp', events: 'guestApp', rewards: 'guestApp', prizes: 'guestApp' };
   return all.filter((id) => (id === 'business' ? canWriteHq : !need[id] || hasModule(need[id])));
 }

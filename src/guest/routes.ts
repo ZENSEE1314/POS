@@ -8,8 +8,9 @@ import type { OnlineMethod } from '../payments/types.ts';
 import { logEvent, RateLimiter } from '../ops.ts';
 import { HtmlPage, Redirect } from '../responses.ts';
 import {
-  consumeAuthState, createAuthState, createLoginCode, customerIdFromToken, endSession, exchangeLoginCode, getCustomer, guestPhone, linkPhone,
-  loginWithPassword, loginWithPhone, newBrowserNonce, registerWithPassword, renameCustomer, requestOtp, safeReturnPath, signInWithIdentity,
+  consumeAuthState, createAuthState, createLoginCode, customerIdFromToken, endSession, exchangeLoginCode, getCustomer, guestPhone, issuePasswordReset,
+  linkPhone, loginWithPassword, loginWithPhone, newBrowserNonce, registerWithPassword, renameCustomer, requestOtp, resetPassword, safeReturnPath,
+  signInWithIdentity,
 } from './accounts.ts';
 import type { IdentityProviders, LoginProvider } from './identity.ts';
 import { LOGIN_PROVIDERS } from './identity.ts';
@@ -60,6 +61,7 @@ export interface GuestDeps {
   smsPerHour?: number;
   otpPerIpPerHour?: number;
   registerPerIpPerHour?: number;
+  loginPerIpPer10Min?: number;
 }
 
 const loginProvider = (identities: IdentityProviders, name: string) => {
@@ -89,7 +91,7 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
   const smsGlobal = new RateLimiter(deps.smsPerHour ?? DEFAULT_SMS_PER_HOUR, HOUR_MS);
   const codeTriesHourly = new RateLimiter(CODE_TRIES_PER_PHONE_PER_HOUR, HOUR_MS);
   const codeTriesDaily = new RateLimiter(CODE_TRIES_PER_PHONE_PER_DAY, DAY_MS);
-  const phoneLoginLimiter = new RateLimiter(PHONE_LOGIN_PER_IP_PER_10MIN, 10 * 60_000);
+  const phoneLoginLimiter = new RateLimiter(deps.loginPerIpPer10Min ?? PHONE_LOGIN_PER_IP_PER_10MIN, 10 * 60_000);
   const registerLimiter = new RateLimiter(deps.registerPerIpPerHour ?? REGISTER_PER_IP_PER_HOUR, HOUR_MS);
   const signedIn = (fn: (ctx: Ctx, customerId: number) => unknown) => async (ctx: Ctx) => fn(ctx, await customerIdFromToken(ctx.db, ctx.token));
   const callbackUrl = (p: string) => `${baseUrl}/api/guest/auth/${p}/callback`;
@@ -172,6 +174,10 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
   route('POST', '/api/guest/login/password', false, ({ db, body, ip }) => {
     allowCodeTry(ip, body.phone);
     return loginWithPassword(db, body.phone, body.password);
+  });
+  route('POST', '/api/guest/password/reset', false, ({ db, body, ip }) => {
+    allowCodeTry(ip, body.phone);
+    return resetPassword(db, Boolean(sms), body.phone, body.code, body.password);
   });
 
   // ---- signed-in guest ----
@@ -272,6 +278,7 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
   }
   route('GET', '/api/vouchers/:code', true, ({ db, actor, params }) => checkVoucher(db, actor, params[0]));
   route('POST', '/api/vouchers/:code/use', true, ({ db, actor, params }) => useVoucher(db, actor, params[0]));
+  route('POST', '/api/guest-password-resets', true, ({ db, actor, body }) => issuePasswordReset(db, actor, body.phone));
   route('GET', '/api/guest-settings', true, ({ db, actor }) => guestSettings(db, actor.tenantId));
   route('PATCH', '/api/guest-settings', true, ({ db, actor, body }) => updateGuestSettings(db, actor, body));
   route('GET', '/api/loyalty-rewards', true, ({ db, actor }) => listRewards(db, actor));

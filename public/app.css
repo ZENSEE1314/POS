@@ -305,3 +305,4 @@ table.data .num, .num { text-align: right; font-variant-numeric: tabular-nums; w
 .table-qr { display: grid; justify-items: center; gap: var(--space-3); text-align: center; }
 .table-qr .qr { width: min(260px, 70vw); height: auto; border-radius: var(--radius-md); }
 .table-qr__link { font-family: var(--font-mono); font-size: var(--text-xs); overflow-wrap: anywhere; color: var(--color-muted); }
+.reset-code { margin: var(--space-2) 0 var(--space-3); font-family: var(--font-mono); font-size: var(--text-2xl); letter-spacing: 0.15em; color: var(--color-fg-strong); }

@@ -2,7 +2,7 @@
 import { t } from './i18n.js';
 import { get, post, patch } from './session.js';
 import { html, fmtDateTime } from './util.js';
-import { formDialog, dataTable, badge, toast } from './ui.js';
+import { formDialog, dataTable, badge, toast, infoDialog } from './ui.js';
 
 const FEATURES = ['service', 'song', 'bottle', 'gift', 'loyalty', 'referral', 'spin', 'events', 'games', 'support', 'pets'];
 const PRIZE_KINDS = ['none', 'points', 'voucher'];
@@ -55,6 +55,22 @@ export function guestAdminSections(reload) {
           });
           toast(t('ga.saved'), 'success');
           await reload();
+        },
+      }),
+    },
+    guestPasswords: {
+      load: async () => [],
+      add: 'gp.issue',
+      view: () => html`<p>${t('gp.intro')}</p><p class="muted">${t('gp.only')}</p>`,
+      dialog: () => formDialog({
+        title: t('gp.issue'), intro: t('gp.intro'),
+        fields: [{ name: 'phone', label: t('gp.phone'), required: true }],
+        submit: 'gp.issue',
+        onSubmit: async (v) => {
+          const r = await post('/api/guest-password-resets', { phone: v.phone });
+          // Shown after the form dialog has closed, so the code stays on screen until staff close it.
+          setTimeout(() => infoDialog(t('gp.codeFor', { phone: r.phone }),
+            html`<p class="reset-code">${r.code}</p><p>${t('gp.tell', { time: fmtDateTime(r.expiresAt) })}</p>`));
         },
       }),
     },

@@ -365,6 +365,7 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
     db, payProviders: providers, baseUrl, isMock, num, sms: buildSms(env), smsPerHour: env.GUEST_SMS_PER_HOUR ? Number(env.GUEST_SMS_PER_HOUR) : undefined,
     otpPerIpPerHour: env.GUEST_OTP_PER_IP_PER_HOUR ? Number(env.GUEST_OTP_PER_IP_PER_HOUR) : undefined,
     registerPerIpPerHour: env.GUEST_REGISTER_PER_IP_PER_HOUR ? Number(env.GUEST_REGISTER_PER_IP_PER_HOUR) : undefined,
+    loginPerIpPer10Min: env.GUEST_LOGIN_PER_IP_PER_10MIN ? Number(env.GUEST_LOGIN_PER_IP_PER_10MIN) : undefined,
     identities: buildIdentityProviders(env, providers.alipay instanceof AlipayProvider ? providers.alipay : undefined),
   });
 

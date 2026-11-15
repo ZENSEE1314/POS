@@ -8,14 +8,17 @@ import { createApp } from '../src/app.ts';
 import { seed } from '../src/seed.ts';
 
 // Mock mode has a development SMS sender, which the merge test uses to verify a phone. All requests share one IP,
-// so the per-IP register limit is lifted.
+// so the per-IP limits are lifted and the per-phone limits are what gets tested.
 const ENV = {
-  PAY_MODE: 'mock', MOCK_PAY_SECRET: 's3cret', PUBLIC_BASE_URL: 'http://venue.test', GUEST_OTP_PER_IP_PER_HOUR: '1000', GUEST_REGISTER_PER_IP_PER_HOUR: '1000',
+  PAY_MODE: 'mock', MOCK_PAY_SECRET: 's3cret', PUBLIC_BASE_URL: 'http://venue.test',
+  GUEST_OTP_PER_IP_PER_HOUR: '1000', GUEST_REGISTER_PER_IP_PER_HOUR: '1000', GUEST_LOGIN_PER_IP_PER_10MIN: '1000',
 } as NodeJS.ProcessEnv;
 const PASSWORD = 'night-owl-88';
 let db: Db;
 let server: Server;
 let base: string;
+let manager = '';
+let waiter = '';
 
 async function call(method: string, path: string, body?: unknown, token?: string): Promise<{ status: number; json: any }> {
   const res = await fetch(base + path, {
@@ -35,7 +38,12 @@ before(async () => {
   server = createApp(db, ENV);
   await new Promise<void>((r) => server.listen(0, r));
   base = `http://localhost:${(server.address() as AddressInfo).port}`;
+  manager = (await call('POST', '/api/login', { company: 'doloruu', username: 'flag.manager', pin: '4444' })).json.token;
+  waiter = (await call('POST', '/api/login', { company: 'doloruu', username: 'flag.waiter', pin: '2222' })).json.token;
 });
+
+const issueCode = (phone: string, token = manager) => call('POST', '/api/guest-password-resets', { phone }, token);
+const reset = (phone: string, code: string, password = 'brand-new-pass') => call('POST', '/api/guest/password/reset', { phone, code, password });
 after(async () => {
   server.close();
   await db.close();
@@ -105,6 +113,56 @@ test('after verifying a phone that already had an account, the password signs in
   const again = (await call('POST', '/api/guest/otp', { phone: '13900000001' })).json;
   await call('POST', '/api/guest/me/phone', { phone: '13900000001', code: again.devCode }, token);
   assert.equal((await signIn('13800000010')).json.customer.id, owner);
+});
+
+test('a staff reset code lets the guest sign in with a new password', async () => {
+  await register('13800000020');
+  await reset('13800000020', (await issueCode('13800000020')).json.code);
+  assert.equal((await signIn('13800000020', 'brand-new-pass')).status, 200);
+});
+
+test('the old password stops working after a reset', async () => {
+  await register('13800000021');
+  await reset('13800000021', (await issueCode('13800000021')).json.code);
+  assert.equal((await signIn('13800000021')).status, 401);
+});
+
+test('a reset signs out the guest everywhere else', async () => {
+  const { token } = (await register('13800000022')).json;
+  await reset('13800000022', (await issueCode('13800000022')).json.code);
+  assert.equal((await call('GET', '/api/guest/me', undefined, token)).status, 401);
+});
+
+test('a reset code works only once', async () => {
+  await register('13800000023');
+  const { code } = (await issueCode('13800000023')).json;
+  await reset('13800000023', code);
+  assert.notEqual((await reset('13800000023', code, 'third-pass-99')).status, 200);
+});
+
+test('a wrong reset code is refused', async () => {
+  await register('13800000024');
+  await issueCode('13800000024');
+  assert.equal((await reset('13800000024', '00000000')).status, 401);
+});
+
+test('a waiter cannot give out reset codes', async () => {
+  await register('13800000025');
+  assert.equal((await issueCode('13800000025', waiter)).status, 403);
+});
+
+test('staff cannot reset an account whose phone is verified', async () => {
+  const { token } = (await register('13800000026')).json;
+  const sms = (await call('POST', '/api/guest/otp', { phone: '13900000026' })).json;
+  await call('POST', '/api/guest/me/phone', { phone: '13900000026', code: sms.devCode }, token);
+  assert.equal((await issueCode('13800000026')).status, 409);
+});
+
+test('the reset code is recorded in the audit log', async () => {
+  await register('13800000027');
+  await issueCode('13800000027');
+  const row = await db.one("SELECT detail FROM audit WHERE action = 'guest.password_reset_code' ORDER BY id DESC LIMIT 1");
+  assert.match(String(row.detail), /13800000027/);
 });
 
 test('the password is stored hashed, never as typed', async () => {

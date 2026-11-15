@@ -1,7 +1,8 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
-import { hashPin, verifyPin } from '../auth.ts';
+import type { Actor } from '../auth.ts';
+import { hashPin, require_, verifyPin, whoOf } from '../auth.ts';
 import type { Db } from '../db.ts';
-import { DomainError } from '../db.ts';
+import { audit, DomainError } from '../db.ts';
 import type { IdentityProfile, LoginProvider } from './identity.ts';
 import type { SmsSender } from './sms.ts';
 import { mergeGuestExtras } from './loyalty.ts';
@@ -16,6 +17,9 @@ const OTP_DIGITS = 6;
 const MAX_NAME = 40;
 const MIN_PASSWORD = 8;
 const MAX_PASSWORD = 72;
+const RESET_TTL_MS = 30 * 60 * 1000;
+const RESET_MAX_ATTEMPTS = 5;
+const RESET_DIGITS = 8;
 /** Mainland mobile numbers: the only kind the SMS provider can reach. */
 const CN_MOBILE = /^1[3-9]\d{9}$/;
 // Hashed for an unknown phone too, so the response time does not reveal which phones have an account.
@@ -230,6 +234,70 @@ export async function loginWithPhone(db: Db, rawPhone: unknown, code: unknown): 
 }
 
 /**
+ * A manager hands a guest who forgot their password a one-time code, after checking it is them in person. Only for
+ * accounts without a verified phone: those have no wallet behind them, and a verified phone can reset by SMS instead,
+ * so staff of one venue can never take over a guest's wallet.
+ */
+export async function issuePasswordReset(db: Db, actor: Actor, rawPhone: unknown): Promise<{ phone: string; code: string; expiresAt: number }> {
+  require_(actor, 'admin.write');
+  const phone = guestPhone(rawPhone);
+  const acct = await db.one('SELECT c.id, c.phone FROM guest_passwords p JOIN customers c ON c.id = p.customer_id WHERE p.phone = ?', [phone]);
+  if (!acct) throw new DomainError('no customer app account uses this phone with a password', 404);
+  if (acct.phone) throw new DomainError('this account has a verified phone, so the guest resets the password by SMS code', 409);
+  const code = String(randomInt(0, 10 ** RESET_DIGITS)).padStart(RESET_DIGITS, '0');
+  const now = Date.now();
+  const expiresAt = now + RESET_TTL_MS;
+  await db.run(
+    `INSERT INTO guest_password_resets (phone, code_hash, attempts, expires_at, tenant_id, issued_by, created_at) VALUES (?,?,0,?,?,?,?)
+     ON CONFLICT (phone) DO UPDATE SET code_hash = EXCLUDED.code_hash, attempts = 0, expires_at = EXCLUDED.expires_at,
+       tenant_id = EXCLUDED.tenant_id, issued_by = EXCLUDED.issued_by, created_at = EXCLUDED.created_at`,
+    [phone, sha256(`${phone}:${code}`), expiresAt, actor.tenantId, actor.id, now]);
+  await audit(db, whoOf(actor), 'guest.password_reset_code', 'customer', acct.id, { phone });
+  return { phone, code, expiresAt };
+}
+
+/** Checks a staff reset code; like SMS codes, a few wrong guesses use it up. Returns false when none is waiting. */
+async function checkResetCode(db: Db, phone: string, code: unknown): Promise<boolean> {
+  const outcome = await db.tx(async (t) => {
+    const row = await t.one('SELECT * FROM guest_password_resets WHERE phone = ? FOR UPDATE', [phone]);
+    if (!row) return 'none';
+    if (row.expires_at < Date.now() || row.attempts >= RESET_MAX_ATTEMPTS) return 'expired';
+    const given = Buffer.from(sha256(`${phone}:${String(code ?? '').trim()}`));
+    if (!timingSafeEqual(given, Buffer.from(row.code_hash))) {
+      await t.run('UPDATE guest_password_resets SET attempts = attempts + 1 WHERE phone = ?', [phone]);
+      return 'wrong';
+    }
+    await t.run('DELETE FROM guest_password_resets WHERE phone = ?', [phone]);
+    return 'ok';
+  });
+  if (outcome === 'none') return false;
+  if (outcome === 'expired') throw new DomainError('reset code expired, ask the staff for a new one', 401);
+  if (outcome === 'wrong') throw new DomainError('wrong reset code', 401);
+  return true;
+}
+
+/**
+ * Sets a new password with either a staff reset code or (when SMS is set up) an SMS code to the phone. Every other
+ * session of the account ends, and this device is signed in.
+ */
+export async function resetPassword(db: Db, hasSms: boolean, rawPhone: unknown, code: unknown, password: unknown): Promise<{ token: string; customer: Customer }> {
+  const phone = guestPhone(rawPhone);
+  const pwHash = hashPin(guestPassword(password));
+  const acct = await db.one('SELECT customer_id FROM guest_passwords WHERE phone = ?', [phone]);
+  if (!acct) throw new DomainError('no account with this phone, please register', 404);
+  const usedStaffCode = await checkResetCode(db, phone, code);
+  if (!usedStaffCode) {
+    if (!hasSms) throw new DomainError('ask the staff at the venue for a reset code', 401);
+    await checkOtp(db, phone, code);
+  }
+  await db.tx(async (t) => {
+    await t.run('UPDATE guest_passwords SET pw_hash = ? WHERE phone = ?', [pwHash, phone]);
+    await t.run('DELETE FROM guest_sessions WHERE customer_id = ?', [acct.customer_id]);
+  });
+  return startSession(db, acct.customer_id);
+}
+
+/**
  * Verifies a phone for the signed-in guest. The phone is what links the guest to each venue's member wallet and stash.
  * If another guest account already owns the phone (they signed in another way before), the two accounts are merged
  * into that one and this session follows.
@@ -273,4 +341,5 @@ export async function purgeExpiredGuestAuth(db: Db, now = Date.now()): Promise<v
   await db.run('DELETE FROM guest_auth_states WHERE expires_at < ?', [now]);
   await db.run('DELETE FROM guest_login_codes WHERE expires_at < ?', [now]);
   await db.run('DELETE FROM guest_otps WHERE expires_at < ?', [now]);
+  await db.run('DELETE FROM guest_password_resets WHERE expires_at < ?', [now]);
 }

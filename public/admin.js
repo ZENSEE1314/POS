@@ -13,7 +13,7 @@ import { hasModule, isWeighed, fmtStock, fmtKg } from './business.js';
 const TABLE_KINDS = ['bar', 'booth', 'room'];
 const RULE_ROLES = ['sales', 'waiter'];
 const BPS_PER_PERCENT = 100;
-const SECTION_IDS = ['business', 'tables', 'products', 'promotions', 'rules', 'staff', 'printers', 'guestApp', 'events', 'rewards', 'prizes'];
+const SECTION_IDS = ['business', 'tables', 'products', 'promotions', 'rules', 'staff', 'printers', 'guestApp', 'guestPasswords', 'events', 'rewards', 'prizes'];
 const STATIONS = ['', 'bar', 'kitchen'];
 const UNITS = ['each', 'kg'];
 const SECTION_LABELS = { business: 'biz.section', promotions: 'promo.section' };
