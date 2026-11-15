@@ -1,4 +1,4 @@
-// Sign-in sheet (WeChat / Alipay / Douyin / phone + SMS code) and phone verification.
+// Sign-in sheet (WeChat / Alipay / Douyin / phone + SMS code / phone + password) and phone verification.
 import { t } from './i18n.js';
 import { html, setHtml, session, post, get, saveToken, sheet, toast, toastError, isWechatBrowser } from './core.js';
 
@@ -74,18 +74,76 @@ function phoneForm(root, { submitLabel, onCode }) {
   form.elements.phone.focus();
 }
 
+/** Phone + password, with a switch between signing in and creating an account. Calls onDone(result) with the session. */
+function passwordForm(root, onDone) {
+  let mode = 'login';
+  const render = () => {
+    const isRegister = mode === 'register';
+    setHtml(root, html`<form novalidate>
+      <div class="g-seg" role="group" aria-label="${t('pw.title')}">
+        <button type="button" aria-pressed="${String(!isRegister)}" data-mode="login">${t('pw.signIn')}</button>
+        <button type="button" aria-pressed="${String(isRegister)}" data-mode="register">${t('pw.register')}</button>
+      </div>
+      ${isRegister && html`<div class="g-field"><label for="pwname">${t('pw.name')}</label>
+        <input id="pwname" name="name" autocomplete="nickname" maxlength="40"></div>`}
+      <div class="g-field"><label for="pwphone">${t('phone.label')}</label>
+        <input id="pwphone" name="phone" type="tel" inputmode="numeric" autocomplete="username" maxlength="16" placeholder="${t('phone.ph')}" required></div>
+      <div class="g-field"><label for="pw">${t('pw.password')}</label>
+        <input id="pw" name="password" type="password" autocomplete="${isRegister ? 'new-password' : 'current-password'}" minlength="8" maxlength="72" required>
+        ${isRegister && html`<p class="g-hint">${t('pw.rule')}</p>`}</div>
+      ${isRegister && html`<div class="g-field"><label for="pw2">${t('pw.again')}</label>
+        <input id="pw2" name="password2" type="password" autocomplete="new-password" maxlength="72" required></div>`}
+      <p class="g-error" role="alert" hidden></p>
+      <button type="submit" class="g-btn g-btn--primary g-btn--block">${t(isRegister ? 'pw.create' : 'pw.signIn')}</button>
+    </form>`);
+    const form = root.querySelector('form');
+    const errorEl = root.querySelector('.g-error');
+    const showError = (msg) => { errorEl.textContent = msg; errorEl.hidden = !msg; };
+    root.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { mode = b.dataset.mode; render(); }));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      showError('');
+      const f = form.elements;
+      if (isRegister && f.password.value !== f.password2.value) { showError(t('pw.mismatch')); return; }
+      const button = form.querySelector('[type=submit]');
+      button.disabled = true;
+      try {
+        const r = isRegister
+          ? await post('/api/guest/register', { phone: f.phone.value, password: f.password.value, name: f.name.value })
+          : await post('/api/guest/login/password', { phone: f.phone.value, password: f.password.value });
+        onDone(r);
+      } catch (err) {
+        showError(err.message);
+      } finally {
+        button.disabled = false;
+      }
+    });
+    form.elements[isRegister ? 'name' : 'phone'].focus();
+  };
+  render();
+}
+
 /** Opens the sign-in sheet. Resolves true when signed in here (phone); provider sign-in leaves the page and comes back. */
 export async function signIn() {
   const { login } = session.config;
   const ok = await sheet(t('login.title'), (body, close) => {
     const social = PROVIDERS.filter((p) => login[p.id]);
     setHtml(body, html`<p class="g-muted g-lead">${t('login.why')}</p>
-      ${!social.length && !login.phone && html`<p class="g-empty">${t('login.none')}</p>`}
+      ${!social.length && !login.phone && !login.password && html`<p class="g-empty">${t('login.none')}</p>`}
       <div class="g-logins">${social.map((p) => html`<button type="button" class="g-login g-login--${p.id}" data-provider="${p.id}">
         <span class="g-login__mark" aria-hidden="true">${p.mark}</span>${t(`login.${p.id}`)}</button>`)}</div>
       ${login.wechat && !isWechatBrowser() && !session.config.mock && html`<p class="g-hint g-gap">${t('login.wechatOutside')}</p>`}
       ${login.phone && html`${social.length ? html`<p class="g-or">${t('login.or')}</p>` : ''}
-        <div data-phone><button type="button" class="g-login g-login--phone" data-usephone><span class="g-login__mark" aria-hidden="true">☎</span>${t('login.phone')}</button></div>`}`);
+        <div data-phone><button type="button" class="g-login g-login--phone" data-usephone><span class="g-login__mark" aria-hidden="true">☎</span>${t('login.phone')}</button></div>`}
+      ${login.password && html`${(social.length || login.phone) ? html`<p class="g-or">${t('login.or')}</p>` : ''}<div data-password></div>`}`);
+    const pwRoot = body.querySelector('[data-password]');
+    if (pwRoot) {
+      passwordForm(pwRoot, (r) => {
+        saveToken(r.token);
+        session.customer = r.customer;
+        close(true);
+      });
+    }
     body.querySelectorAll('[data-provider]').forEach((b) => b.addEventListener('click', () => {
       // Keep the page address (venue, table) so the provider sends the guest straight back to it.
       location.href = `/api/guest/auth/${b.dataset.provider}/start?return=${encodeURIComponent(location.pathname)}`;

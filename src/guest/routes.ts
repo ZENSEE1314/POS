@@ -9,7 +9,7 @@ import { logEvent, RateLimiter } from '../ops.ts';
 import { HtmlPage, Redirect } from '../responses.ts';
 import {
   consumeAuthState, createAuthState, createLoginCode, customerIdFromToken, endSession, exchangeLoginCode, getCustomer, guestPhone, linkPhone,
-  loginWithPhone, newBrowserNonce, renameCustomer, requestOtp, safeReturnPath, signInWithIdentity,
+  loginWithPassword, loginWithPhone, newBrowserNonce, registerWithPassword, renameCustomer, requestOtp, safeReturnPath, signInWithIdentity,
 } from './accounts.ts';
 import type { IdentityProviders, LoginProvider } from './identity.ts';
 import { LOGIN_PROVIDERS } from './identity.ts';
@@ -36,6 +36,8 @@ const OTP_PER_PHONE_PER_DAY = 10;
 const CODE_TRIES_PER_PHONE_PER_HOUR = 10;
 const CODE_TRIES_PER_PHONE_PER_DAY = 30;
 const PHONE_LOGIN_PER_IP_PER_10MIN = 20;
+// Guests at one venue often share its Wi-Fi, so one IP can be many real sign-ups.
+const REGISTER_PER_IP_PER_HOUR = 30;
 /** Platform-wide ceiling on SMS sent, so a pumping attack across many numbers cannot run up the SMS bill. */
 const DEFAULT_SMS_PER_HOUR = 300;
 const AUTH_COOKIE = 'np_gauth';
@@ -57,6 +59,7 @@ export interface GuestDeps {
   num: (v: unknown) => number;
   smsPerHour?: number;
   otpPerIpPerHour?: number;
+  registerPerIpPerHour?: number;
 }
 
 const loginProvider = (identities: IdentityProviders, name: string) => {
@@ -87,6 +90,7 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
   const codeTriesHourly = new RateLimiter(CODE_TRIES_PER_PHONE_PER_HOUR, HOUR_MS);
   const codeTriesDaily = new RateLimiter(CODE_TRIES_PER_PHONE_PER_DAY, DAY_MS);
   const phoneLoginLimiter = new RateLimiter(PHONE_LOGIN_PER_IP_PER_10MIN, 10 * 60_000);
+  const registerLimiter = new RateLimiter(deps.registerPerIpPerHour ?? REGISTER_PER_IP_PER_HOUR, HOUR_MS);
   const signedIn = (fn: (ctx: Ctx, customerId: number) => unknown) => async (ctx: Ctx) => fn(ctx, await customerIdFromToken(ctx.db, ctx.token));
   const callbackUrl = (p: string) => `${baseUrl}/api/guest/auth/${p}/callback`;
   const secureCookie = baseUrl.startsWith('https://') ? '; Secure' : '';
@@ -100,7 +104,7 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
   // ---- public ----
   route('GET', '/api/guest/config', false, () => ({
     mock: isMock,
-    login: { wechat: Boolean(identities.wechat), alipay: Boolean(identities.alipay), douyin: Boolean(identities.douyin), phone: Boolean(sms) },
+    login: { wechat: Boolean(identities.wechat), alipay: Boolean(identities.alipay), douyin: Boolean(identities.douyin), phone: Boolean(sms), password: true },
     payments: { wechat: Boolean(payProviders.wechat), alipay: Boolean(payProviders.alipay) },
   }));
   route('GET', '/api/guest/venue/:company', false, ({ db, params }) => venueInfo(db, params[0]));
@@ -157,6 +161,17 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
     if (!sms) throw new DomainError('phone sign-in is not available yet', 404);
     allowCodeTry(ip, body.phone);
     return loginWithPhone(db, body.phone, body.code);
+  });
+
+  // ---- phone + password (no SMS) ----
+  route('POST', '/api/guest/register', false, ({ db, body, ip }) => {
+    if (!registerLimiter.allow(ip)) throw new DomainError('too many attempts, try again later', 429);
+    return registerWithPassword(db, body.phone, body.password, body.name);
+  });
+  // Same per-phone guess budget as SMS codes, so rotating IPs does not help guess one account's password.
+  route('POST', '/api/guest/login/password', false, ({ db, body, ip }) => {
+    allowCodeTry(ip, body.phone);
+    return loginWithPassword(db, body.phone, body.password);
   });
 
   // ---- signed-in guest ----

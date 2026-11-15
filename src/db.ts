@@ -410,6 +410,16 @@ const MIGRATIONS: Array<{ id: number; statements: string[] }> = [
         UNIQUE (store_id, client_ref))`,
     ],
   },
+  {
+    // Phone + password sign-in. The phone here is only a login name, never checked by SMS, so it is kept apart from
+    // customers.phone (the verified number that unlocks a venue's member wallet and stored bottles).
+    id: 10,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS guest_passwords (
+        phone TEXT PRIMARY KEY, customer_id BIGINT NOT NULL UNIQUE REFERENCES customers(id),
+        pw_hash TEXT NOT NULL, created_at BIGINT NOT NULL)`,
+    ],
+  },
 ];
 
 async function migrate(db: Db): Promise<void> {

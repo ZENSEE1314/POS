@@ -47,6 +47,9 @@ const en = {
   'phone.devCode': 'Development mode, your code is {code}', 'phone.title': 'Verify your phone',
   'phone.why': 'Your phone number connects you to your member wallet and stored bottles at this venue. It is also how the venue confirms your bookings.',
   'phone.verified': 'Phone verified.',
+  'pw.title': 'Phone and password', 'pw.signIn': 'Sign in', 'pw.register': 'Register', 'pw.create': 'Create account',
+  'pw.name': 'Your name (optional)', 'pw.password': 'Password', 'pw.again': 'Password again', 'pw.rule': 'At least 8 characters.',
+  'pw.mismatch': 'The two passwords do not match.',
 
   'account.title': 'My account', 'account.hello': 'Hello, {name}', 'account.guest': 'guest', 'account.signedVia': 'Signed in with {list}',
   'account.phone': 'Phone', 'account.noPhone': 'Not verified', 'account.verify': 'Verify phone', 'account.rename': 'Change name', 'account.name': 'Your name',
@@ -55,7 +58,7 @@ const en = {
   'account.stash': 'Stored bottles', 'account.noStash': 'No bottles stored.', 'account.stashLeft': '{n} bottle left', 'account.expires': 'until {date}',
   'account.stashCode': 'Code {code}', 'account.bookings': 'My bookings', 'account.noBookings': 'No bookings yet.', 'account.orders': 'Recent orders',
   'account.noOrders': 'No orders yet.', 'account.saved': 'Saved.', 'account.save': 'Save', 'account.topUp': 'Top-up', 'account.spent': 'Payment',
-  'provider.wechat': 'WeChat', 'provider.alipay': 'Alipay', 'provider.douyin': 'Douyin', 'provider.phone': 'phone',
+  'provider.wechat': 'WeChat', 'provider.alipay': 'Alipay', 'provider.douyin': 'Douyin', 'provider.phone': 'phone', 'provider.password': 'phone and password',
 
   'book.title': 'Book a table', 'book.store': 'Location', 'book.when': 'Date and time', 'book.party': 'Number of guests', 'book.name': 'Name for the booking',
   'book.note': 'Requests (optional)', 'book.notePh': 'e.g. birthday, a booth near the stage', 'book.submit': 'Request booking',
@@ -156,6 +159,9 @@ const zh = {
   'phone.devCode': '开发模式，验证码为 {code}', 'phone.title': '验证手机号',
   'phone.why': '手机号用于关联您在本门店的会员储值和存酒，门店也会通过它确认您的预订。',
   'phone.verified': '手机号已验证。',
+  'pw.title': '手机号和密码', 'pw.signIn': '登录', 'pw.register': '注册', 'pw.create': '创建账户',
+  'pw.name': '称呼（选填）', 'pw.password': '密码', 'pw.again': '再次输入密码', 'pw.rule': '至少 8 位。',
+  'pw.mismatch': '两次输入的密码不一致。',
 
   'account.title': '我的账户', 'account.hello': '您好，{name}', 'account.guest': '贵宾', 'account.signedVia': '已通过{list}登录',
   'account.phone': '手机号', 'account.noPhone': '未验证', 'account.verify': '验证手机号', 'account.rename': '修改称呼', 'account.name': '称呼',
@@ -164,7 +170,7 @@ const zh = {
   'account.stash': '我的存酒', 'account.noStash': '暂无存酒。', 'account.stashLeft': '剩余 {n} 瓶', 'account.expires': '有效期至 {date}',
   'account.stashCode': '取酒码 {code}', 'account.bookings': '我的预订', 'account.noBookings': '暂无预订。', 'account.orders': '最近订单',
   'account.noOrders': '暂无订单。', 'account.saved': '已保存。', 'account.save': '保存', 'account.topUp': '充值', 'account.spent': '消费',
-  'provider.wechat': '微信', 'provider.alipay': '支付宝', 'provider.douyin': '抖音', 'provider.phone': '手机号',
+  'provider.wechat': '微信', 'provider.alipay': '支付宝', 'provider.douyin': '抖音', 'provider.phone': '手机号', 'provider.password': '手机号和密码',
 
   'book.title': '预订卡座', 'book.store': '门店', 'book.when': '到店时间', 'book.party': '人数', 'book.name': '预订人称呼',
   'book.note': '特殊要求（可选）', 'book.notePh': '例如：生日、靠近舞台的卡座', 'book.submit': '提交预订',

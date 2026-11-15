@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
+import { hashPin, verifyPin } from '../auth.ts';
 import type { Db } from '../db.ts';
 import { DomainError } from '../db.ts';
 import type { IdentityProfile, LoginProvider } from './identity.ts';
@@ -13,10 +14,15 @@ const OTP_RESEND_MS = 60 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
 const OTP_DIGITS = 6;
 const MAX_NAME = 40;
+const MIN_PASSWORD = 8;
+const MAX_PASSWORD = 72;
 /** Mainland mobile numbers: the only kind the SMS provider can reach. */
 const CN_MOBILE = /^1[3-9]\d{9}$/;
+// Hashed for an unknown phone too, so the response time does not reveal which phones have an account.
+const DUMMY_PASSWORD_HASH = hashPin('timing-equaliser');
 
-export interface Customer { id: number; name: string; phone: string | null; providers: LoginProvider[] }
+/** `phone` is the SMS-verified number; `loginPhone` is the unverified one a password account signs in with. */
+export interface Customer { id: number; name: string; phone: string | null; loginPhone: string | null; providers: LoginProvider[] }
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 const newSecret = () => randomBytes(24).toString('hex');
@@ -117,7 +123,46 @@ export async function getCustomer(db: Db, id: number): Promise<Customer> {
   const c = await db.one('SELECT id, display_name, phone FROM customers WHERE id = ?', [id]);
   if (!c) throw new DomainError('please sign in', 401);
   const ids = await db.all('SELECT DISTINCT provider FROM customer_identities WHERE customer_id = ? ORDER BY provider', [id]);
-  return { id: c.id, name: c.display_name, phone: c.phone, providers: ids.map((r) => r.provider) };
+  const pw = await db.one('SELECT phone FROM guest_passwords WHERE customer_id = ?', [id]);
+  return { id: c.id, name: c.display_name, phone: c.phone, loginPhone: pw?.phone ?? null, providers: ids.map((r) => r.provider) };
+}
+
+function guestPassword(v: unknown): string {
+  if (typeof v !== 'string' || v.length < MIN_PASSWORD || v.length > MAX_PASSWORD) {
+    throw new DomainError(`password: ${MIN_PASSWORD} to ${MAX_PASSWORD} characters`, 422);
+  }
+  return v;
+}
+
+/**
+ * Creates a guest account that signs in with phone + password, no SMS needed. The phone is not verified, so it does
+ * not become customers.phone: the wallet, stored bottles and bookings still need the SMS check (verify phone).
+ */
+export async function registerWithPassword(db: Db, rawPhone: unknown, password: unknown, name: unknown): Promise<{ token: string; customer: Customer }> {
+  const phone = guestPhone(rawPhone);
+  const pwHash = hashPin(guestPassword(password));
+  const displayName = typeof name === 'string' ? name.trim().slice(0, MAX_NAME) : '';
+  const id = await db.tx(async (t) => {
+    const now = Date.now();
+    if (await t.one('SELECT 1 AS x FROM guest_passwords WHERE phone = ?', [phone])) return null;
+    const customerId = await t.insert('INSERT INTO customers (display_name, created_at, last_seen_at) VALUES (?,?,?)', [displayName, now, now]);
+    // Two registrations of one phone racing: the primary key decides; the loser's empty account is rolled back below.
+    const row = await t.one('INSERT INTO guest_passwords (phone, customer_id, pw_hash, created_at) VALUES (?,?,?,?) ON CONFLICT (phone) DO NOTHING RETURNING customer_id',
+      [phone, customerId, pwHash, now]);
+    if (!row) await t.run('DELETE FROM customers WHERE id = ?', [customerId]);
+    return row ? customerId : null;
+  });
+  if (id === null) throw new DomainError('this phone already has an account, please sign in', 409);
+  return startSession(db, id);
+}
+
+export async function loginWithPassword(db: Db, rawPhone: unknown, password: unknown): Promise<{ token: string; customer: Customer }> {
+  const phone = guestPhone(rawPhone);
+  const row = await db.one('SELECT customer_id, pw_hash FROM guest_passwords WHERE phone = ?', [phone]);
+  const ok = verifyPin(typeof password === 'string' ? password : '', row?.pw_hash ?? DUMMY_PASSWORD_HASH);
+  if (!row || !ok) throw new DomainError('wrong phone number or password', 401);
+  await db.run('UPDATE customers SET last_seen_at = ? WHERE id = ?', [Date.now(), row.customer_id]);
+  return startSession(db, row.customer_id);
 }
 
 export async function renameCustomer(db: Db, id: number, name: unknown): Promise<Customer> {
@@ -206,6 +251,10 @@ export async function linkPhone(db: Db, customerId: number, token: string, rawPh
       await t.run(`UPDATE ${table} SET customer_id = ? WHERE customer_id = ?`, [owner.id, customerId]);
     }
     await mergeGuestExtras(t, customerId, owner.id);
+    // The password login follows the merge, unless the surviving account already has one of its own.
+    await t.run('UPDATE guest_passwords SET customer_id = ? WHERE customer_id = ? AND NOT EXISTS (SELECT 1 FROM guest_passwords WHERE customer_id = ?)',
+      [owner.id, customerId, owner.id]);
+    await t.run('DELETE FROM guest_passwords WHERE customer_id = ?', [customerId]);
     // Sessions are not carried over: every other session of either account ends, and only this device (which just
     // proved the phone) moves to the merged account.
     await t.run('DELETE FROM guest_sessions WHERE customer_id IN (?, ?) AND token_hash <> ?', [customerId, owner.id, current]);

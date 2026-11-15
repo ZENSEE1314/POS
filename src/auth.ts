@@ -42,7 +42,7 @@ export function hashPin(pin: string): string {
   return `${salt.toString('hex')}:${scryptSync(pin, salt, 32).toString('hex')}`;
 }
 
-function verifyPin(pin: string, stored: string): boolean {
+export function verifyPin(pin: string, stored: string): boolean {
   const [saltHex, hashHex] = stored.split(':');
   const expected = Buffer.from(hashHex, 'hex');
   const actual = scryptSync(pin, Buffer.from(saltHex, 'hex'), 32);

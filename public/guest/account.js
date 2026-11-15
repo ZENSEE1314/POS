@@ -23,7 +23,11 @@ export async function mountAccount(root, { company, navigate }) {
     setHtml(root, skeleton(4));
     const a = await get(`/api/guest/account/${encodeURIComponent(company)}`);
     const c = session.customer;
-    const providers = [...c.providers.map((p) => t(`provider.${p}`)), ...(c.phone && !c.providers.length ? [t('provider.phone')] : [])];
+    const providers = [
+      ...c.providers.map((p) => t(`provider.${p}`)),
+      ...(c.loginPhone ? [t('provider.password')] : []),
+      ...(c.phone && !c.providers.length && !c.loginPhone ? [t('provider.phone')] : []),
+    ];
     setHtml(root, html`
       <div class="g-hero"><p class="g-hero__eyebrow">${a.company.name}</p><h1 class="g-hero__title">${t('account.hello', { name: c.name || t('account.guest') })}</h1>
         ${providers.length > 0 && html`<p class="g-hero__text">${t('account.signedVia', { list: providers.join(' · ') })}</p>`}</div>
