@@ -8,7 +8,7 @@
 //   /g/<company>/<store>/book        book a table
 //   /g/<company>/<store>/t/<token>   the table QR: order, my orders, bill and pay
 import { t, tOr, getLang, setLang, loadLang, LANGS, addStrings } from './i18n.js';
-import { html, setHtml, session, get, loadToken, toastError, skeleton } from './core.js';
+import { html, raw, setHtml, session, get, loadToken, toastError, skeleton } from './core.js';
 import { finishProviderLogin, loadCustomer } from './login.js';
 import { mountMenuBrowse, mountTable, waitForPayment } from './table.js';
 import { mountAccount, mountBooking } from './account.js';
@@ -49,7 +49,8 @@ const EXTRAS = {
 const appEl = document.getElementById('app');
 const venueCache = new Map();
 let cleanup = null;
-let header = { title: '', subtitle: '', company: '' };
+let header = { title: '', subtitle: '', company: '', nav: null };
+const MAX_TABS = 5;
 
 const enc = encodeURIComponent;
 const parts = () => location.pathname.split('/').filter(Boolean).slice(1).map(decodeURIComponent);
@@ -69,8 +70,34 @@ async function venue(company) {
   }
 }
 
+/**
+ * Bottom menu bar for a venue: Home, Book, Rewards, Games, then Events/Contact, Account, keeping only what the venue has
+ * switched on. `store` is the location to book at (the booking screen lets the guest pick another).
+ */
+function tabsFor(v, store = v.stores[0]) {
+  const company = enc(v.company.code);
+  const f = v.features ?? {};
+  const optional = [
+    v.bookings !== false && store && { href: `/g/${company}/${enc(store.code)}/book`, icon: '◷', label: t('nav.book') },
+    f.loyalty && { href: `/g/${company}/rewards`, icon: '◆', label: t('venue.rewards') },
+    f.games && { href: `/g/${company}/games`, icon: '⚄', label: t('nav.games') },
+    f.events && { href: `/g/${company}/events`, icon: '★', label: t('venue.events') },
+    f.support && { href: `/g/${company}/support`, icon: '✉', label: t('venue.support') },
+  ].filter(Boolean);
+  return [
+    { href: `/g/${company}`, icon: '⌂', label: t('nav.home') },
+    ...optional.slice(0, MAX_TABS - 2),
+    { href: `/g/${company}/account`, icon: '☺', label: t('nav.account') },
+  ];
+}
+
+const tabBar = (tabs) => html`<nav class="g-tabbar" aria-label="${t('nav.label')}">${tabs.map((tab) =>
+  html`<a href="${tab.href}" data-link ${raw(location.pathname === tab.href ? 'aria-current="page"' : '')}>
+    <span class="g-tabbar__icon" aria-hidden="true">${tab.icon}</span><span>${tab.label}</span></a>`)}</nav>`;
+
 function frame() {
-  const { title, subtitle, company } = header;
+  const { title, subtitle, company, nav } = header;
+  appEl.classList.toggle('has-tabbar', Boolean(nav));
   setHtml(appEl, html`<header class="g-top">
       <a class="g-brand" href="${company ? `/g/${enc(company)}` : '/g/'}" data-link><span class="g-logo" aria-hidden="true">✦</span>
         <span><span class="g-brand__name">${title || t('app.name')}</span>${subtitle && html`<span class="g-brand__sub">${subtitle}</span>`}</span></a>
@@ -80,7 +107,8 @@ function frame() {
         ${company && html`<a class="g-btn g-btn--small" href="/g/${enc(company)}/account" data-link aria-label="${t('venue.account')}">${session.customer ? '☺' : t('login.title')}</a>`}
       </div></header>
     <main id="main"></main>
-    <p class="g-foot">${t('foot.text')}</p>`);
+    <p class="g-foot">${t('foot.text')}</p>
+    ${nav && tabBar(nav)}`);
   return appEl.querySelector('#main');
 }
 
@@ -156,14 +184,14 @@ async function route() {
   cleanup?.();
   cleanup = null;
   const [company, second, third, fourth] = parts();
-  header = { title: '', subtitle: '', company: company ?? '' };
+  header = { title: '', subtitle: '', company: company ?? '', nav: null };
   let root = frame();
   try {
     if (!company) { landing(root); return; }
     setHtml(root, skeleton(4));
     if (second === undefined || second === 'account' || EXTRAS[second]) {
       const v = await venue(company);
-      header = { title: v.company.name, subtitle: '', company: v.company.code };
+      header = { title: v.company.name, subtitle: '', company: v.company.code, nav: tabsFor(v) };
       root = frame();
       void claimPendingReferral(v.company.code);
       if (second === 'account') await mountAccount(root, { company: v.company.code, navigate });
@@ -182,7 +210,7 @@ async function route() {
     const v = await venue(company);
     const store = v.stores.find((s) => s.code.toLowerCase() === second.toLowerCase());
     if (!store) throw Object.assign(new Error(t('venue.notFound')), { status: 404 });
-    header = { title: store.name, subtitle: v.company.name, company: v.company.code };
+    header = { title: store.name, subtitle: v.company.name, company: v.company.code, nav: tabsFor(v, store) };
     root = frame();
     if (third === 'menu') await mountMenuBrowse(root, { company: v.company.code, store: store.code });
     else if (third === 'order' && v.orderAhead) cleanup = await mountShopOrder(root, { company: v.company.code, store: store.code, navigate });

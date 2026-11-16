@@ -23,6 +23,8 @@ export async function mountAccount(root, { company, navigate }) {
     setHtml(root, skeleton(4));
     const a = await get(`/api/guest/account/${encodeURIComponent(company)}`);
     const c = session.customer;
+    // Verifying a phone needs an SMS code; until the platform has SMS set up, the button would lead nowhere.
+    const canVerify = Boolean(session.config.login.phone);
     const providers = [
       ...c.providers.map((p) => t(`provider.${p}`)),
       ...(c.loginPhone ? [t('provider.password')] : []),
@@ -33,7 +35,9 @@ export async function mountAccount(root, { company, navigate }) {
         ${providers.length > 0 && html`<p class="g-hero__text">${t('account.signedVia', { list: providers.join(' · ') })}</p>`}</div>
       <section class="g-card" aria-labelledby="w-title"><h2 id="w-title" class="g-card__title">${t('account.wallet')}</h2>
         ${!a.phoneVerified
-          ? html`<p class="g-muted g-lead">${t('account.walletNeedsPhone')}</p><button type="button" class="g-btn g-btn--primary g-btn--block" data-verify>${t('account.verify')}</button>`
+          ? canVerify
+            ? html`<p class="g-muted g-lead">${t('account.walletNeedsPhone')}</p><button type="button" class="g-btn g-btn--primary g-btn--block" data-verify>${t('account.verify')}</button>`
+            : html`<p class="g-muted">${t('account.walletAskStaff')}</p>`
           : a.wallet
             ? html`<p class="g-balance g-num">${fmtMoney(a.wallet.balance)}</p>
               ${a.wallet.ledger.length > 0 && html`<h3 class="g-muted g-gap">${t('account.history')}</h3><ul class="g-lines">${a.wallet.ledger.map((l) =>
@@ -53,8 +57,9 @@ export async function mountAccount(root, { company, navigate }) {
           : html`<p class="g-muted">${t('account.noBookings')}</p>`}</section>
       <section aria-labelledby="o-title"><h2 id="o-title" class="g-cat">${t('account.orders')}</h2>
         ${a.orders.length ? ordersHtml(a.orders) : html`<p class="g-empty">${t('account.noOrders')}</p>`}</section>
-      <section class="g-card"><dl class="g-sum"><dt>${t('account.phone')}</dt><dd>${c.phone ?? t('account.noPhone')}</dd></dl>
-        <div class="g-paybtns"><button type="button" class="g-btn" data-verify>${t('account.verify')}</button>
+      <section class="g-card"><dl class="g-sum"><dt>${t('account.phone')}</dt><dd>${c.phone ?? c.loginPhone ?? t('account.noPhone')}</dd>
+        ${!c.phone && c.loginPhone && html`<dt></dt><dd class="g-hint">${t('account.notVerified')}</dd>`}</dl>
+        <div class="g-paybtns">${canVerify && html`<button type="button" class="g-btn" data-verify>${t('account.verify')}</button>`}
           <button type="button" class="g-btn" data-rename>${t('account.rename')}</button>
           <button type="button" class="g-btn g-btn--danger" data-logout>${t('account.logout')}</button></div></section>`);
   };
@@ -104,7 +109,7 @@ export async function mountBooking(root, { company, store, stores, navigate }) {
   }
   const render = () => {
     if (!session.customer) { signedOutCard(root, render); return; }
-    if (!session.customer.phone) {
+    if (!session.customer.phone && !session.customer.loginPhone) {
       setHtml(root, html`<div class="g-card"><p class="g-muted g-lead">${t('book.needPhone')}</p>
         <button type="button" class="g-btn g-btn--primary g-btn--block" data-verify>${t('account.verify')}</button></div>`);
       root.querySelector('[data-verify]').addEventListener('click', async () => { if (await verifyPhone()) render(); });

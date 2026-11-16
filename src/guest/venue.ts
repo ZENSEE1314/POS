@@ -190,7 +190,7 @@ export async function cancelGuestOrder(db: Db, customerId: number, orderId: numb
 /**
  * Orders ahead from the store page, without a table. Staff accept them in Guest orders (that opens a pickup or delivery
  * sale at today's prices), then mark them ready / out for delivery / done. Items sold by weight are weighed in store,
- * so they cannot be ordered here. A verified phone is needed so the shop can call about the order.
+ * so they cannot be ordered here. A phone number is needed so the shop can call about the order.
  */
 export async function placeShopOrder(db: Db, customerId: number, input: Record<string, unknown>) {
   const mode = String(input.mode ?? '');
@@ -207,8 +207,7 @@ export async function placeShopOrder(db: Db, customerId: number, input: Record<s
   if (mode === 'delivery' && !address) throw new DomainError('a delivery address is required', 422);
   const now = Date.now();
   const pickupAt = input.pickupAt == null ? null : int(input.pickupAt, 'pickupAt', now, now + PICKUP_HORIZON_MS);
-  const phone = (await db.one('SELECT phone FROM customers WHERE id = ?', [customerId]))?.phone;
-  if (!phone) throw new DomainError('verify your phone number so the shop can reach you', 403);
+  if (!(await contactPhone(db, customerId))) throw new DomainError('add your phone number so the shop can reach you', 403);
   const s = await storeByCode(db, String(input.company ?? ''), String(input.store ?? ''));
   if (!(await hasModule(db, s.tenantId, 'delivery'))) throw new DomainError('this shop does not take orders ahead', 404);
   return db.tx(async (t) => {
@@ -314,15 +313,25 @@ export async function payFromWallet(db: Db, customerId: number, target: PayTarge
 
 // ---------- bookings ----------
 
+/**
+ * A number staff can call: the verified phone, else the phone a password account registered with. Only for contact;
+ * money (wallet, stored bottles) still needs the verified phone.
+ */
+async function contactPhone(db: Db, customerId: number): Promise<string | null> {
+  const r = await db.one('SELECT c.phone, p.phone AS login_phone FROM customers c LEFT JOIN guest_passwords p ON p.customer_id = c.id WHERE c.id = ?', [customerId]);
+  return r?.phone ?? r?.login_phone ?? null;
+}
+
 export async function createGuestBooking(db: Db, customerId: number, input: Record<string, unknown>) {
-  const c = await db.one('SELECT phone, display_name FROM customers WHERE id = ?', [customerId]);
-  if (!c?.phone) throw new DomainError('verify your phone number so the venue can reach you', 403);
+  const c = await db.one('SELECT display_name FROM customers WHERE id = ?', [customerId]);
+  const phone = await contactPhone(db, customerId);
+  if (!phone) throw new DomainError('add your phone number so the venue can reach you', 403);
   const s = await storeByCode(db, String(input.company ?? ''), String(input.store ?? ''));
   const partySize = int(input.partySize, 'partySize', 1, MAX_PARTY);
   const eta = int(input.eta, 'eta', 0, Number.MAX_SAFE_INTEGER);
   const now = Date.now();
   if (eta < now + BOOKING_MIN_LEAD_MS || eta > now + BOOKING_HORIZON_MS) throw new DomainError('choose a time between 15 minutes and 60 days from now', 422);
-  const name = text(input.name, 'name', 40) || c.display_name;
+  const name = text(input.name, 'name', 40) || c?.display_name || '';
   let note = text(input.note, 'note');
   let eventId: number | null = null;
   if (input.eventId !== undefined && input.eventId !== null) {
@@ -337,7 +346,7 @@ export async function createGuestBooking(db: Db, customerId: number, input: Reco
     if (active.n >= MAX_ACTIVE_BOOKINGS) throw new DomainError(`you already have ${MAX_ACTIVE_BOOKINGS} upcoming bookings here`, 409);
     const id = await t.insert(
       `INSERT INTO bookings (store_id, source, phone, name, party_size, eta, status, created_at, customer_id, note, event_id)
-       VALUES (?, 'guest', ?, ?, ?, ?, 'submitted', ?, ?, ?, ?)`, [s.storeId, c.phone, name, partySize, eta, now, customerId, note, eventId]);
+       VALUES (?, 'guest', ?, ?, ?, ?, 'submitted', ?, ?, ?, ?)`, [s.storeId, phone, name, partySize, eta, now, customerId, note, eventId]);
     await audit(t, { tenantId: s.tenantId, storeId: s.storeId }, 'booking.guest', 'booking', id, { customerId, partySize, eta });
     return { bookingId: id };
   });

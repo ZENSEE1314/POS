@@ -355,7 +355,7 @@ test('wallet pay without enough balance is a 402', async () => {
   assert.equal((await call('POST', `/api/guest/table/${qrA2}/pay`, { method: 'member' }, g)).status, 402);
 });
 
-test('booking needs a verified phone', async () => {
+test('booking needs a phone number', async () => {
   const g = await socialLogin('wechat', 'Mo');
   assert.equal((await call('POST', '/api/guest/bookings', { company: 'doloruu', store: 'FLAG', partySize: 4, eta: Date.now() + 5 * HOUR }, g)).status, 403);
 });

@@ -16,12 +16,12 @@ export async function listGuestOrders(db: Db, actor: Actor, status = 'pending') 
   if (!ORDER_STATUSES.includes(status)) throw new DomainError('unknown status', 422);
   const orders = await db.all(
     `SELECT o.id, o.status, o.note, o.reject_reason AS "rejectReason", o.created_at AS "createdAt", o.decided_at AS "decidedAt", o.bill_id AS "billId",
-            o.table_id AS "tableId", d.name AS "tableName", g.name AS "toTableName", c.display_name AS "guestName", c.phone AS "guestPhone",
+            o.table_id AS "tableId", d.name AS "tableName", g.name AS "toTableName", c.display_name AS "guestName", COALESCE(c.phone, gp.phone) AS "guestPhone", c.phone IS NOT NULL AS "guestPhoneVerified",
             o.mode, o.address, o.pickup_at AS "pickupAt", o.fulfil_status AS "fulfilStatus",
             (SELECT b.id FROM bills b WHERE b.table_id = o.table_id AND b.status = 'open') AS "openBillId",
             (SELECT b.status FROM bills b WHERE b.id = o.bill_id) AS "billStatus"
      FROM guest_orders o LEFT JOIN dining_tables d ON d.id = o.table_id JOIN customers c ON c.id = o.customer_id
-     LEFT JOIN dining_tables g ON g.id = o.to_table_id
+     LEFT JOIN dining_tables g ON g.id = o.to_table_id LEFT JOIN guest_passwords gp ON gp.customer_id = c.id
      WHERE o.store_id = ? AND o.status = ? ORDER BY o.id ${status === 'pending' ? 'ASC' : 'DESC'} LIMIT ?`, [actor.storeId, status, LIST_LIMIT]);
   if (!orders.length) return [];
   const items = await db.all(

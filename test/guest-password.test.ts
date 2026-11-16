@@ -165,6 +165,29 @@ test('the reset code is recorded in the audit log', async () => {
   assert.match(String(row.detail), /13800000027/);
 });
 
+const HOUR = 3_600_000;
+const book = (token: string) => call('POST', '/api/guest/bookings', { company: 'doloruu', store: 'FLAG', partySize: 4, eta: Date.now() + 5 * HOUR }, token);
+
+test('a password account can book a table', async () => {
+  const { token } = (await register('13800000030')).json;
+  assert.equal((await book(token)).status, 200);
+});
+
+test('the booking carries the registered phone so staff can call', async () => {
+  const { token } = (await register('13800000031')).json;
+  const { bookingId } = (await book(token)).json;
+  const row = await db.one('SELECT phone FROM bookings WHERE id = ?', [bookingId]);
+  assert.equal(row.phone, '13800000031');
+});
+
+test("registering a member's phone does not open their wallet", async () => {
+  const tenant = await db.one("SELECT id FROM tenants WHERE code = 'doloruu'");
+  await db.run('INSERT INTO members (tenant_id, phone, name, balance) VALUES (?,?,?,?)', [tenant.id, '13800000032', 'Real member', 50000]);
+  const { token } = (await register('13800000032')).json;
+  const a = await call('GET', '/api/guest/account/doloruu', undefined, token);
+  assert.ok(!a.json.wallet);
+});
+
 test('the password is stored hashed, never as typed', async () => {
   await register('13800000009');
   const row = await db.one('SELECT pw_hash FROM guest_passwords WHERE phone = ?', ['13800000009']);

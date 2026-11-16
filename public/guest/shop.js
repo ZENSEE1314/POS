@@ -34,10 +34,10 @@ addStrings({
   },
 });
 
-/** The guest needs to be signed in with a verified phone before ordering ahead. */
+/** The guest needs to be signed in with a phone the shop can call (verified, or the one they registered with). */
 async function readyToOrder() {
   if (!session.customer && !await ensureSignedIn()) return false;
-  if (session.customer.phone) return true;
+  if (session.customer.phone || session.customer.loginPhone) return true;
   toast(t('shop.needPhone'));
   return Boolean(await verifyPhone()) && Boolean(session.customer?.phone);
 }
