@@ -70,6 +70,13 @@ Webhook `POST /webhooks/douyin` (HMAC `x-douyin-signature`), `POST /webhooks/wec
 - `POST /api/shifts/open {openingCash}` · `GET /api/shifts/current` · `POST /api/shifts/close {countedCash}` -> variance · `GET /api/shifts` (manager, finance, owner)
 - `GET /api/receivables` · `POST /api/receivables/:paymentId/collect {amount, method: cash|wechat|alipay|transfer}` (finance, owner)
 - `GET /api/reports/daily?from&to` (manager, finance, owner) · `GET /api/payroll?from&to[&all=1]` (finance, owner) · `GET /api/audit[?all=1]`
+- `GET /api/activity?from&to&staff&action&before&all=1` (manager, finance, owner): audit trail with staff and store names, 100 per page (`next` = pass as `before`); `action` is a prefix (`order.` matches voids and gifts). Pay changes (`staff.pay`) show no detail unless the reader is finance or owner.
+
+## Attendance, salary and broadcasts
+- `GET /api/attendance/me` · `POST /api/attendance/clock-in` · `POST /api/attendance/clock-out` (every staff member, for themselves; one open shift each)
+- `GET /api/attendance?from&to[&all=1]` (manager, finance, owner) · `POST /api/attendance {employeeId, clockIn, clockOut, note?}` · `PATCH /api/attendance/:id {clockIn, clockOut, note?}` (manager, owner; own store unless owner; shifts up to 24 h, not in the future; old times kept in the audit log)
+- `GET /api/salary?from&to[&all=1]` (finance, owner): per staff member base pay (finished hours x hourly rate, or the monthly salary once; the till asks for one calendar month) + commission = total · `PUT /api/staff-pay/:employeeId {kind: hourly|monthly, rate}` (finance, owner; rate in fen)
+- `GET /api/broadcasts` · `POST /api/broadcasts {audience: staff|guests, title, body?, days?: 1-90}` · `POST /api/broadcasts/:id/stop` (manager, owner; a store manager's message is for their store, the owner's for every store) · `GET /api/news` (every staff member: live staff messages). Live guest messages appear as `news` in `GET /api/guest/venue/:company`.
 
 ## Staff and head office
 - `GET /api/staff` (manager, owner) · `PATCH /api/staff/:id {active?, pin?, name?, role?}` (owner)

@@ -1,8 +1,9 @@
-// Reports view: daily report, payroll, shifts, receivables (with collection) and audit log.
+// Reports view: daily report, commission, attendance, salary, shifts, receivables (with collection) and activity log.
 import { t, tOr } from './i18n.js';
 import { get, post, can } from './session.js';
 import { html, setHtml, fmtMoney, fmtDateTime, toDateInput, dayRange, daysAgo } from './util.js';
 import { delegate, formDialog, dataTable, badge, skeleton, notifyError, toast, pressed } from './ui.js';
+import { peopleSections, peopleLoaders, peopleActions } from './people-reports.js';
 
 const WEEK_DAYS = 7;
 const COLLECT_METHODS = ['cash', 'wechat', 'alipay', 'transfer'];
@@ -17,6 +18,7 @@ const stat = (label, value) => html`<div class="stat"><span class="stat__label">
 const SECTIONS = [
   { id: 'daily', perm: 'audit.read' },
   { id: 'payroll', perm: 'payroll.read' },
+  ...peopleSections,
   { id: 'shifts', perm: 'audit.read' },
   { id: 'receivables', perm: 'payroll.read' },
   { id: 'audit', perm: 'audit.read' },
@@ -77,17 +79,7 @@ const loaders = {
           ? html`<button type="button" class="btn btn--small btn--primary" data-action="collect" data-id="${r.paymentId}" data-due="${outstanding(r)}">${t('reports.collect')}</button>`
           : badge(t('reports.cleared'), 'success', '✓')) }] })}</div>`);
   },
-
-  async audit(el, form) {
-    const all = form ? form.get('all') === 'on' : false;
-    const rows = await get(`/api/audit${all ? '?all=1' : ''}`);
-    const scope = can('hq.read') ? html`<form class="panel search-bar" data-form="range"><label class="check"><input type="checkbox" name="all" ${all ? 'checked' : ''}><span>${t('reports.allStores')}</span></label>
-      <button type="submit" class="btn btn--primary">${t('common.refresh')}</button></form>` : '';
-    setHtml(el, html`${scope}<div class="panel">${dataTable({ caption: t('reports.audit'), empty: t('common.noData'), rows,
-      cols: [{ label: t('reports.time'), cell: (a) => fmtDateTime(a.ts) }, { label: t('reports.actor'), cell: (a) => `#${a.actor_id ?? '-'}` },
-        { label: t('reports.action'), cell: (a) => html`<code>${a.action}</code>` }, { label: t('reports.entity'), cell: (a) => `${a.entity} #${a.entity_id ?? ''}` },
-        { label: t('reports.detail'), cell: (a) => html`<code class="detail">${a.detail}</code>` }] })}</div>`);
-  },
+  ...peopleLoaders,
 };
 
 let active = null;
@@ -103,10 +95,16 @@ export function mountReports(root) {
   const body = root.querySelector('#rp-body');
 
   const load = (form) => loaders[active](body, form).catch((e) => { setHtml(body, html``); notifyError(e); });
+  // After an edit, redraw with the filters still on screen.
+  const reload = () => {
+    const form = body.querySelector('form[data-form=range]');
+    return load(form ? new FormData(form) : undefined);
+  };
   load();
 
   delegate(root, {
     click: {
+      ...peopleActions(body, reload),
       section: (el) => {
         active = el.dataset.id;
         root.querySelectorAll('[data-action=section]').forEach((b) => b.setAttribute('aria-pressed', pressed(b === el)));

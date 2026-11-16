@@ -20,6 +20,7 @@ import { hasModule, BUSINESS_TYPES, BUSINESS_CHANGED } from './business.js';
 import { initOffline, syncPillHtml, mountSyncPill, openSyncPanel, syncState, syncNow, forgetEverything, offlineSignedIn } from './offline/index.js';
 import { openPrintDialog } from './print/dialog.js';
 import { clearPrintData } from './print/log.js';
+import { clockSlot, newsSlot, refreshHeaderWidgets, clockActions } from './clock.js';
 
 const COMPANY_KEY = 'nightpos.company';
 const SIGNUP_PIN_MIN = 6;
@@ -144,12 +145,14 @@ function headerHtml() {
       <div class="chrome__tools">
         ${storeControl}
         ${syncPillHtml()}
+        ${clockSlot()}
         <p class="chrome__user"><strong>${actor.name}</strong> <span class="badge badge--neutral">${t(`role.${actor.role}`)}</span></p>
         ${langToggle()}
         <button type="button" class="btn btn--small btn--ghost" data-action="printSettings">${t('print.header')}</button>
         <button type="button" class="btn btn--small btn--ghost" data-action="logout">${t('shell.logout')}</button>
       </div>
     </header>
+    ${newsSlot()}
     <nav class="tabs" aria-label="${t('shell.nav')}">${visibleTabs().map((tab) =>
       html`<a class="tab" href="#${tab.id}" data-tab="${tab.id}">${t(`nav.${tab.id}`)}</a>`)}</nav>
     <main id="main" class="view" tabindex="-1"></main>`;
@@ -176,6 +179,7 @@ function renderShell() {
   unmountSyncPill = mountSyncPill();
   mountCurrentView();
   startOrderBadge();
+  void refreshHeaderWidgets();
 }
 
 let stopOrderBadge = null;
@@ -272,7 +276,7 @@ async function boot() {
   // Modules changed in Admin: rebuild the tabs (a tab that just disappeared falls back to the first one).
   window.addEventListener(BUSINESS_CHANGED, () => { if (app.actor) renderShell(); });
   delegate(document.body, {
-    click: { lang: changeLang, logout, signup: openSignup, syncPanel: openSyncPanel, printSettings: openPrintDialog },
+    click: { lang: changeLang, logout, signup: openSignup, syncPanel: openSyncPanel, printSettings: openPrintDialog, ...clockActions },
     change: { switchStore },
     submit: { login: submitLogin },
   });

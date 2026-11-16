@@ -11,6 +11,7 @@ import { addLine, attachMember, getBill, listOpenTableless, openCounterSale, ope
 import { businessOf, requireModule, updateBusiness } from './business.ts';
 import { scanCode } from './retail.ts';
 import { registerStockRoutes } from './stock-routes.ts';
+import { registerPeopleRoutes } from './people-routes.ts';
 import { expireStash, lookupStash, retrieveWine, storeWine, transferStash } from './stash.ts';
 import { cancelBooking, confirmBooking, createBooking, ingestDouyinBooking, listBookings, liveVoucherVerifier, mockVoucherVerifier, redeemVoucher, verifyDouyinSignature } from './bookings.ts';
 import type { DouyinBookingEvent } from './bookings.ts';
@@ -314,10 +315,12 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
   route('GET', '/api/payroll', true, ({ db, actor, query }) =>
     payrollSummary(db, actor, num(query.get('from') ?? 0), num(query.get('to') ?? Date.now() + 1), query.get('all') === '1'));
   route('GET', '/api/reports/daily', true, ({ db, actor, query }) => dailyReport(db, actor, num(query.get('from') ?? 0), num(query.get('to') ?? Date.now() + 1)));
-  route('GET', '/api/audit', true, ({ db, actor, query }) => {
+  route('GET', '/api/audit', true, async ({ db, actor, query }) => {
     require_(actor, 'audit.read');
     const wide = query.get('all') === '1' && can(actor, 'hq.read');
-    return db.all('SELECT * FROM audit WHERE tenant_id = ? AND (? OR store_id = ?) ORDER BY id DESC LIMIT 200', [actor.tenantId, wide, actor.storeId]);
+    const rows = await db.all('SELECT * FROM audit WHERE tenant_id = ? AND (? OR store_id = ?) ORDER BY id DESC LIMIT 200', [actor.tenantId, wide, actor.storeId]);
+    // Pay rates stay with finance and the owner (see src/activity.ts).
+    return can(actor, 'payroll.read') ? rows : rows.map((r) => (r.action === 'staff.pay' ? { ...r, detail: null } : r));
   });
   route('POST', '/api/shifts/open', true, async ({ db, actor, body }) => ({ shiftId: await openShift(db, actor, num(body.openingCash ?? 0)) }));
   route('GET', '/api/shifts/current', true, ({ db, actor }) => currentShift(db, actor));
@@ -364,6 +367,7 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
   route('POST', '/platform/selfheal', false, ({ db }) => selfHeal(db));
 
   registerStockRoutes(route, { num });
+  registerPeopleRoutes(route, { num });
 
   registerGuestRoutes(route, {
     db, payProviders: providers, baseUrl, isMock, num, sms: buildSms(env), smsPerHour: env.GUEST_SMS_PER_HOUR ? Number(env.GUEST_SMS_PER_HOUR) : undefined,

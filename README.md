@@ -8,7 +8,7 @@ WeChat Pay, Alipay and Douyin (抖音来客) integrations; Postgres; self-monito
 ```bash
 npm install
 node scripts/dev.ts          # http://localhost:3500: simulated payments + demo company (dev only)
-npm test                     # 610 tests on embedded Postgres (PGlite); on a low-memory machine use --test-concurrency=1
+npm test                     # 652 tests on embedded Postgres (PGlite); on a low-memory machine use --test-concurrency=1
 node scripts/test-pg.ts      # same suite through the production `pg` driver over the Postgres wire protocol
 node scripts/simulate.ts http://localhost:3500 dev-admin-key 4 25   # multi-company load simulation + books audit
 ```
@@ -152,6 +152,12 @@ If the bridge is paired but unreachable, receipts, slips and reports fall back t
 **Limits**: the bridge is loopback-only, so the browser must run on the PC the printers are attached to (a separate tablet cannot reach it). Safari/iOS block https to
 http://127.0.0.1; use Chrome or Edge (details in `bridge/README.md`). Pending ticket batches are lost if the tab is closed within 3 s of the last tap.
 
+## Staff: attendance, salary, broadcasts, activity log
+- **Clock in / out**: every staff member has a button at the top of the till. Managers see and fix shifts in Reports > Attendance (the old times stay in the activity log).
+- **Salary**: Reports > Salary (finance and owner only) per month: set each person's pay (hourly or monthly), and see hours, base pay, commission and total.
+- **Broadcast**: Admin > Broadcast sends a message to staff (a banner on every till) or to customers (news on the company's customer page) for 1 to 90 days.
+- **Activity log**: Reports > Activity log shows who did what and when, filterable by date, type and staff member.
+
 ## Model
 Tenant (company) → stores. Tables, products, stock, stash, bookings, bills and commission rules are per store; member wallets are company-wide.
 Store staff are pinned to one store; `owner` and `finance` are company-wide and can switch store. See `docs/API.md`.
@@ -174,5 +180,5 @@ The till keeps trading when the internet drops. A service worker (`public/sw.js`
 ## Not production-complete yet
 - Douyin: the webhook signature and the live voucher check are assumptions/stubs until an approved 抖音来客 account is available.
 - WeChat/Alipay signing is tested with generated keys only; test with real sandbox credentials before taking money.
-- One merchant account for all stores. No refunds flow, wall screen, or attendance yet. Printing has only been exercised against a fake TCP printer, not real hardware.
+- One merchant account for all stores. No refunds flow or wall screen yet. Salary is base pay + commission only (no tax, social insurance or deductions). Printing has only been exercised against a fake TCP printer, not real hardware.
 - Business rules to confirm: commission is on gross line prices; credit (挂账) counts as revenue when sold; min spend/table fee are fixed when a table is opened.

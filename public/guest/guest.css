@@ -307,3 +307,13 @@ button { font: inherit; }
 .g-picked { min-height: 48px; margin: var(--space-3) 0; text-align: center; font-family: var(--font-display); font-size: var(--text-xl); font-weight: var(--weight-bold); color: var(--color-primary); }
 @media (prefers-reduced-motion: reduce) { .g-dice--shaking { animation: none; } }
 .g-field[hidden] { display: none; }
+
+/* Company news (Admin > Broadcast) on the home page */
+.g-news { margin-top: var(--space-4); }
+.g-news__item {
+  display: flex; gap: var(--space-3); margin-top: var(--space-2); padding: var(--space-3) var(--space-4);
+  background: var(--color-surface); border: 1px solid var(--color-border); border-left: 3px solid var(--color-primary); border-radius: var(--radius-md);
+}
+.g-news__icon { flex: none; width: 20px; height: 20px; color: var(--color-accent-text); margin-top: 2px; }
+.g-news__title { font-size: var(--text-md); font-weight: var(--weight-bold); color: var(--color-fg-strong); }
+.g-news__body { margin-top: var(--space-1); color: var(--color-fg); overflow-wrap: anywhere; white-space: pre-line; }

@@ -5,7 +5,7 @@ import { DomainError } from './db.ts';
 export type Role = 'host' | 'waiter' | 'cashier' | 'manager' | 'finance' | 'owner';
 export type Action =
   | 'booking.create' | 'table.open' | 'order.add' | 'order.gift' | 'order.void'
-  | 'bill.discount' | 'bill.settle' | 'stash.write' | 'payroll.read' | 'admin.write' | 'audit.read'
+  | 'bill.discount' | 'bill.settle' | 'stash.write' | 'payroll.read' | 'payroll.write' | 'admin.write' | 'audit.read'
   | 'hq.read' | 'hq.write';
 
 const MANAGERS: Role[] = ['manager', 'owner'];
@@ -22,6 +22,7 @@ const PERMISSIONS: Record<Action, Role[]> = {
   'bill.settle': ['cashier', 'manager', 'owner'],
   'stash.write': ['waiter', 'cashier', 'manager', 'owner'],
   'payroll.read': ['finance', 'owner'],
+  'payroll.write': ['finance', 'owner'],
   'admin.write': MANAGERS,
   'audit.read': ['manager', 'finance', 'owner'],
   'hq.read': ['finance', 'owner'],

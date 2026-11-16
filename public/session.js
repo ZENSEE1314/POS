@@ -12,6 +12,7 @@ const PERMISSIONS = {
   'bill.settle': ['cashier', 'manager', 'owner'],
   'stash.write': ['waiter', 'cashier', 'manager', 'owner'],
   'payroll.read': ['finance', 'owner'],
+  'payroll.write': ['finance', 'owner'],
   'admin.write': MANAGERS,
   'audit.read': ['manager', 'finance', 'owner'],
   'hq.read': ['finance', 'owner'],

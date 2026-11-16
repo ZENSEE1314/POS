@@ -208,11 +208,22 @@ function heroHtml(v, eyebrow, title, extra = '') {
     </div></section>`;
 }
 
+/** Announcements the company posted in Admin > Broadcast (newest first). */
+function newsHtml(v, storeName = null) {
+  const items = (v.news ?? []).filter((n) => !storeName || !n.store || n.store === storeName);
+  if (!items.length) return '';
+  return html`<section class="g-news" aria-labelledby="g-news-title"><h2 id="g-news-title" class="g-cat">${t('venue.news')}</h2>
+    ${items.map((n) => html`<article class="g-news__item">${icon('star', 'g-news__icon')}<div>
+      <h3 class="g-news__title">${n.title}</h3>${n.body && html`<p class="g-news__body">${n.body}</p>`}
+      ${n.store && !storeName && html`<p class="g-hint">${n.store}</p>`}</div></article>`)}</section>`;
+}
+
 function venueHome(root, v) {
   const company = v.company.code;
   const where = v.stores.length === 1 && placeLine(v.stores[0]);
   setHtml(root, html`<a class="g-back" href="/g/" data-link>${icon('back')}<span>${t('dir.allShort')}</span></a>
     ${heroHtml(v, t('venue.welcome'), v.theme?.headline || v.company.name, where ? html`<p class="g-cover__where">${icon('pin')}<span>${where}</span></p>` : '')}
+    ${newsHtml(v)}
     ${v.stores.length > 1 && html`<h2 class="g-cat">${t('venue.pickStore')}</h2>`}
     <div class="${actionsClass(v)}">${v.stores.length > 1
       ? v.stores.map((s) => tile(`/g/${enc(company)}/${enc(s.code)}`, 'pin', s.name, placeLine(s) || t('venue.storeSub')))
@@ -244,6 +255,7 @@ const extraTiles = (company, f, v) => [
 function storeHome(root, v, store) {
   const where = placeLine(store);
   setHtml(root, html`${heroHtml(v, v.company.name, store.name, where ? html`<p class="g-cover__where">${icon('pin')}<span>${where}</span></p>` : '')}
+    ${newsHtml(v, store.name)}
     <div class="${actionsClass(v)}">${storeTiles(v.company.code, store, v)}</div>
     <h2 class="g-cat">${t('venue.more')}</h2>
     <div class="${actionsClass(v)}">${extraTiles(v.company.code, v.features ?? {}, v)}</div>`);
