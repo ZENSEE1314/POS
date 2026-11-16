@@ -6,10 +6,10 @@ import { hashPin } from './auth.ts';
 export const DEMO_COMPANY = 'doloruu';
 export const DEMO_PINS = { host: '1111', waiter: '2222', cashier: '3333', manager: '4444', finance: '5555', owner: '6666', rep: '7777' };
 
-interface StoreSeed { name: string; code: string; poi: string }
+interface StoreSeed { name: string; code: string; poi: string; city: string; address: string }
 const STORES: StoreSeed[] = [
-  { name: 'Doloruu Flagship', code: 'FLAG', poi: 'poi_flagship' },
-  { name: 'Doloruu Lounge', code: 'LNGE', poi: 'poi_lounge' },
+  { name: 'Doloruu Flagship', code: 'FLAG', poi: 'poi_flagship', city: 'Shanghai', address: '88 Julu Road, Jing\'an' },
+  { name: 'Doloruu Lounge', code: 'LNGE', poi: 'poi_lounge', city: 'Hangzhou', address: '12 Nanshan Road, Xihu' },
 ];
 
 const PRODUCTS: Array<[string, string, number, number]> = [
@@ -32,7 +32,8 @@ export async function seed(db: Db): Promise<void> {
     await t.run('INSERT INTO employees (tenant_id, store_id, name, role, pin_hash, username) VALUES (?,NULL,?,?,?,?)', [tenantId, 'Finance Ed', 'finance', hashPin(DEMO_PINS.finance), 'finance']);
 
     for (const s of STORES) {
-      const storeId = await t.insert('INSERT INTO stores (tenant_id, name, code, douyin_poi_id, created_at) VALUES (?,?,?,?,?)', [tenantId, s.name, s.code, s.poi, Date.now()]);
+      const storeId = await t.insert('INSERT INTO stores (tenant_id, name, code, douyin_poi_id, created_at, city, address) VALUES (?,?,?,?,?,?,?)',
+        [tenantId, s.name, s.code, s.poi, Date.now(), s.city, s.address]);
       const staff: Array<[string, string, string, string]> = [
         [`Host ${s.code}`, 'host', DEMO_PINS.host, 'host'], [`Waiter ${s.code}`, 'waiter', DEMO_PINS.waiter, 'waiter'],
         [`Cashier ${s.code}`, 'cashier', DEMO_PINS.cashier, 'cashier'], [`Manager ${s.code}`, 'manager', DEMO_PINS.manager, 'manager'],

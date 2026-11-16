@@ -8,7 +8,7 @@ WeChat Pay, Alipay and Douyin (抖音来客) integrations; Postgres; self-monito
 ```bash
 npm install
 node scripts/dev.ts          # http://localhost:3500: simulated payments + demo company (dev only)
-npm test                     # 581 tests on embedded Postgres (PGlite); on a low-memory machine use --test-concurrency=1
+npm test                     # 595 tests on embedded Postgres (PGlite); on a low-memory machine use --test-concurrency=1
 node scripts/test-pg.ts      # same suite through the production `pg` driver over the Postgres wire protocol
 node scripts/simulate.ts http://localhost:3500 dev-admin-key 4 25   # multi-company load simulation + books audit
 ```
@@ -75,7 +75,8 @@ A mobile web page for guests, at `/g/<company code>` (works in WeChat, Alipay, D
 
 | Address | What the guest gets |
 |---|---|
-| `/g/<company>` | venue home: choose a location, menu, book a table, my account |
+| `/g/` | **find a place**: search every listed business on the platform by name, city or street, filter by city, plus "my places" (businesses the guest has used). Each company only shares its public name, locations, city and address; owners set city/address in Admin > Locations in the app and can turn listing off in Admin > Customer app |
+| `/g/<company>` | venue home: choose a location, menu, book a table, my account (bottom menu bar: Home, Book, Rewards, Games, Me) |
 | `/g/<company>/<store>/menu` | the menu with prices and sold-out items (browse only) |
 | `/g/<company>/<store>/t/<token>` | **table QR code**: order from the menu, follow "my orders", see the table's bill and pay it |
 | `/g/<company>/<store>/book` | request a booking (lands in the staff Bookings tab as "Customer app", status Requested) |

@@ -1,4 +1,5 @@
-// Admin sections for the customer app: feature switches and point settings, events, loyalty rewards and the prize wheel.
+// Admin sections for the customer app: feature switches and point settings, location details for the app search,
+// guest password resets, events, loyalty rewards and the prize wheel.
 import { t } from './i18n.js';
 import { get, post, patch } from './session.js';
 import { html, fmtDateTime } from './util.js';
@@ -19,6 +20,7 @@ export function guestAdminSections(reload) {
   let prizeInfo = { usingDefaults: false, defaults: [] };
 
   const settingsRows = () => [
+    { id: 'listed', label: t('ga.listed'), value: onOff(settings.listed) },
     ...FEATURES.map((f) => ({ id: f, label: t(`ga.feature.${f}`), value: onOff(settings.features[f]) })),
     { id: 'ppy', label: t('ga.pointsPerYuan'), value: settings.pointsPerYuan },
     { id: 'ref', label: t('ga.referralPoints'), value: settings.referralPoints },
@@ -43,6 +45,7 @@ export function guestAdminSections(reload) {
       dialog: () => formDialog({
         title: t('admin.guestApp'), intro: t('ga.intro'),
         fields: [
+          { name: 'listed', label: t('ga.listed'), type: 'checkbox', value: settings.listed, hint: t('ga.listedHint') },
           ...FEATURES.map((f) => ({ name: f, label: t(`ga.feature.${f}`), type: 'checkbox', value: settings.features[f] })),
           { name: 'pointsPerYuan', label: t('ga.pointsPerYuan'), type: 'int', min: 0, max: 100, value: settings.pointsPerYuan },
           { name: 'referralPoints', label: t('ga.referralPoints'), type: 'int', min: 0, value: settings.referralPoints },
@@ -50,10 +53,29 @@ export function guestAdminSections(reload) {
         ],
         onSubmit: async (v) => {
           await patch('/api/guest-settings', {
+            listed: v.listed,
             features: Object.fromEntries(FEATURES.map((f) => [f, v[f]])),
             pointsPerYuan: v.pointsPerYuan ?? 0, referralPoints: v.referralPoints ?? 0, spinCost: v.spinCost ?? 1,
           });
           toast(t('ga.saved'), 'success');
+          await reload();
+        },
+      }),
+    },
+    locations: {
+      load: () => get('/api/hq/stores'),
+      add: null,
+      view: (rows) => html`<p class="muted">${t('loc.intro')}</p>${dataTable({ caption: t('admin.locations'), empty: t('common.noData'), rows, cols: [
+        { label: t('admin.name'), cell: (x) => x.name }, { label: t('loc.city'), cell: (x) => x.city || '-' },
+        { label: t('loc.address'), cell: (x) => x.address || '-' }, { label: t('common.actions'), cell: (x) => editBtn(x.id) }] })}`,
+      dialog: (x) => formDialog({
+        title: x.name,
+        fields: [
+          { name: 'city', label: t('loc.city'), value: x.city },
+          { name: 'address', label: t('loc.address'), value: x.address },
+        ],
+        onSubmit: async (v) => {
+          await patch(`/api/hq/stores/${x.id}/location`, { city: v.city ?? '', address: v.address ?? '' });
           await reload();
         },
       }),

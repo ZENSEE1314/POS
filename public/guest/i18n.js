@@ -7,7 +7,7 @@ const en = {
   'common.close': 'Close', 'common.cancel': 'Cancel', 'common.back': 'Back', 'common.loading': 'Loading', 'common.retry': 'Try again',
   'err.network': 'Cannot connect to the server. Check your internet connection and try again.', 'err.generic': 'Something went wrong.',
 
-  'landing.eyebrow': 'Bars and clubs', 'landing.title': 'Order, book and pay from your phone',
+  'landing.eyebrow': 'Welcome', 'landing.title': 'Order, book and pay from your phone',
   'landing.text': 'Scan the QR code on your table, or enter the venue code you were given.',
   'landing.code': 'Venue code', 'landing.go': 'Open venue', 'landing.notFound': 'No venue with that code.',
 
@@ -49,6 +49,12 @@ const en = {
   'phone.verified': 'Phone verified.',
   'account.walletAskStaff': 'Your member wallet and stored bottles will show here once phone verification is available. Until then, ask the staff at the counter.',
   'account.notVerified': 'not verified',
+  'dir.title': 'Find a place', 'dir.text': 'Bars, restaurants, cafes, shops and more. One account works everywhere.',
+  'dir.search': 'Search', 'dir.placeholder': 'Name, city or street', 'dir.city': 'City', 'dir.anyCity': 'All cities',
+  'dir.all': 'All places', 'dir.found': 'Results', 'dir.none': 'Nothing found. Try another name or city.',
+  'dir.mine': 'My places', 'dir.locations': '{n} locations', 'dir.back': '‹ All places',
+  'biz.bar': 'Bar / club', 'biz.restaurant': 'Restaurant', 'biz.cafe': 'Cafe', 'biz.retail': 'Shop', 'biz.pet': 'Pets',
+  'biz.salon': 'Salon / spa', 'biz.other': '',
   'nav.label': 'Main menu', 'nav.home': 'Home', 'nav.account': 'Me', 'nav.book': 'Book', 'nav.games': 'Games',
   'pw.title': 'Phone and password', 'pw.signIn': 'Sign in', 'pw.register': 'Register', 'pw.create': 'Create account',
   'pw.name': 'Your name (optional)', 'pw.password': 'Password', 'pw.again': 'Password again', 'pw.rule': 'At least 8 characters.',
@@ -127,7 +133,7 @@ const zh = {
   'common.close': '关闭', 'common.cancel': '取消', 'common.back': '返回', 'common.loading': '加载中', 'common.retry': '重试',
   'err.network': '无法连接服务器，请检查网络后重试。', 'err.generic': '出了点问题。',
 
-  'landing.eyebrow': '酒吧 · 夜店', 'landing.title': '用手机点单、订座、买单',
+  'landing.eyebrow': '欢迎', 'landing.title': '用手机点单、订座、买单',
   'landing.text': '扫描桌上的二维码，或输入门店提供的场所代码。',
   'landing.code': '场所代码', 'landing.go': '进入', 'landing.notFound': '找不到这个场所代码。',
 
@@ -169,6 +175,12 @@ const zh = {
   'phone.verified': '手机号已验证。',
   'account.walletAskStaff': '开通手机号验证后，您的会员储值和存酒会显示在这里。在此之前请咨询前台服务员。',
   'account.notVerified': '未验证',
+  'dir.title': '发现好去处', 'dir.text': '酒吧、餐厅、咖啡馆、商店等，一个账户通用。',
+  'dir.search': '搜索', 'dir.placeholder': '名称、城市或街道', 'dir.city': '城市', 'dir.anyCity': '全部城市',
+  'dir.all': '全部商家', 'dir.found': '搜索结果', 'dir.none': '没有找到，换个名称或城市试试。',
+  'dir.mine': '我去过的', 'dir.locations': '{n} 家门店', 'dir.back': '‹ 全部商家',
+  'biz.bar': '酒吧 / 夜店', 'biz.restaurant': '餐厅', 'biz.cafe': '咖啡馆', 'biz.retail': '商店', 'biz.pet': '宠物',
+  'biz.salon': '美容 / 水疗', 'biz.other': '',
   'nav.label': '主菜单', 'nav.home': '首页', 'nav.account': '我的', 'nav.book': '预订', 'nav.games': '游戏',
   'pw.title': '手机号和密码', 'pw.signIn': '登录', 'pw.register': '注册', 'pw.create': '创建账户',
   'pw.name': '称呼（选填）', 'pw.password': '密码', 'pw.again': '再次输入密码', 'pw.rule': '至少 8 位。',

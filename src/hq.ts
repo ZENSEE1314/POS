@@ -9,10 +9,27 @@ const MAX_TEXT_LENGTH = 200;
 
 export function listStores(db: Db, actor: Actor) {
   require_(actor, 'hq.read');
-  return db.all('SELECT id, name, code, douyin_poi_id AS "douyinPoiId", active FROM stores WHERE tenant_id = ? ORDER BY id', [actor.tenantId]);
+  return db.all('SELECT id, name, code, douyin_poi_id AS "douyinPoiId", active, city, address FROM stores WHERE tenant_id = ? ORDER BY id', [actor.tenantId]);
 }
 
-export async function createStore(db: Db, actor: Actor, input: { name: string; code: string; douyinPoiId?: string; copyCatalogFrom?: number }): Promise<number> {
+const MAX_CITY = 40;
+const placeText = (v: unknown, name: string, max: number): string => {
+  if (v == null) return '';
+  if (typeof v !== 'string' || v.trim().length > max) throw new DomainError(`${name}: up to ${max} characters`, 422);
+  return v.trim();
+};
+
+/** City and street address, shown to guests in the customer app search. */
+export async function updateStoreLocation(db: Db, actor: Actor, storeId: number, input: { city?: unknown; address?: unknown }): Promise<void> {
+  require_(actor, 'hq.write');
+  const city = placeText(input.city, 'city', MAX_CITY);
+  const address = placeText(input.address, 'address', MAX_TEXT_LENGTH);
+  const found = await db.one('UPDATE stores SET city = ?, address = ? WHERE id = ? AND tenant_id = ? RETURNING id', [city, address, storeId, actor.tenantId]);
+  if (!found) throw new DomainError('store not found', 404);
+  await audit(db, whoOf(actor), 'store.location', 'store', storeId, { city, address });
+}
+
+export async function createStore(db: Db, actor: Actor, input: { name: string; code: string; douyinPoiId?: string; copyCatalogFrom?: number; city?: unknown; address?: unknown }): Promise<number> {
   require_(actor, 'hq.write');
   if (typeof input.name !== 'string' || typeof input.code !== 'string' || !input.name.trim() || !input.code.trim()) throw new DomainError('name and code required', 422);
   // An empty poi means "no Douyin mapping": storing '' would make the second such store collide on the unique index.
@@ -23,7 +40,8 @@ export async function createStore(db: Db, actor: Actor, input: { name: string; c
     const exists = await t.one('SELECT 1 AS x FROM stores WHERE tenant_id = ? AND code = ?', [actor.tenantId, input.code]);
     if (exists) throw new DomainError('store code already used', 409);
     if (poi && (await t.one('SELECT 1 AS x FROM stores WHERE douyin_poi_id = ?', [poi]))) throw new DomainError('Douyin poi is already mapped to another store', 409);
-    const id = await t.insert('INSERT INTO stores (tenant_id, name, code, douyin_poi_id, created_at) VALUES (?,?,?,?,?)', [actor.tenantId, input.name, input.code, poi, Date.now()]);
+    const id = await t.insert('INSERT INTO stores (tenant_id, name, code, douyin_poi_id, created_at, city, address) VALUES (?,?,?,?,?,?,?)',
+      [actor.tenantId, input.name, input.code, poi, Date.now(), placeText(input.city, 'city', MAX_CITY), placeText(input.address, 'address', MAX_TEXT_LENGTH)]);
     await audit(t, { tenantId: actor.tenantId, storeId: id, actorId: actor.id }, 'store.create', 'store', id, input);
     if (input.copyCatalogFrom) await copyCatalog(t, actor, Number(input.copyCatalogFrom), [id]);
     return id;

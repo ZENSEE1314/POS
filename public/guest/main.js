@@ -119,25 +119,67 @@ const setHeader = (h) => {
   brand.querySelector('.g-brand__name').textContent = header.title || t('app.name');
 };
 
+const SEARCH_DELAY_MS = 250;
+
+const placeLine = (s) => [s.city, s.address].filter(Boolean).join(' · ');
+const placeCard = (e) => {
+  const cities = [...new Set(e.stores.map((s) => s.city).filter(Boolean))];
+  const kindAndCity = [tOr(`biz.${e.company.business}`, ''), ...cities].filter(Boolean).join(' · ');
+  const detail = e.stores.length === 1 ? e.stores[0].address : t('dir.locations', { n: e.stores.length });
+  return html`<a class="g-tile" href="/g/${enc(e.company.code)}" data-link><span class="g-tile__mark" aria-hidden="true">✦</span>
+    <span class="g-tile__text"><strong>${e.company.name}</strong>
+      <span>${kindAndCity}${kindAndCity && detail && html`<br>`}${detail}</span></span></a>`;
+};
+
+/** Every listed business on the platform in one place: search by name, city or address, plus the guest's own places. */
 function landing(root) {
+  let city = '';
+  let timer = null;
+  let seq = 0;
   setHtml(root, html`<section class="g-hero"><p class="g-hero__eyebrow">${t('landing.eyebrow')}</p>
-      <h1 class="g-hero__title">${t('landing.title')}</h1><p class="g-hero__text">${t('landing.text')}</p></section>
-    <form class="g-card" novalidate><div class="g-field"><label for="vc">${t('landing.code')}</label>
-      <input id="vc" name="code" autocapitalize="none" autocomplete="off" spellcheck="false" required></div>
-      <p class="g-error" role="alert" hidden></p><button type="submit" class="g-btn g-btn--primary g-btn--block">${t('landing.go')}</button></form>`);
-  const form = root.querySelector('form');
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const code = form.elements.code.value.trim();
-    const errorEl = form.querySelector('.g-error');
+      <h1 class="g-hero__title">${t('dir.title')}</h1><p class="g-hero__text">${t('dir.text')}</p></section>
+    <form class="g-search" role="search" novalidate><label class="sr-only" for="q">${t('dir.search')}</label>
+      <input id="q" name="q" type="search" placeholder="${t('dir.placeholder')}" autocomplete="off" enterkeyhint="search"></form>
+    <div data-cities></div><div data-mine></div><h2 class="g-cat" data-results-title>${t('dir.all')}</h2>
+    <div class="g-actions" data-results aria-live="polite">${skeleton(3)}</div>`);
+  const input = root.querySelector('#q');
+  const resultsEl = root.querySelector('[data-results]');
+  const citiesEl = root.querySelector('[data-cities]');
+
+  const renderCities = (cities) => {
+    if (!cities.length) { setHtml(citiesEl, html``); return; }
+    setHtml(citiesEl, html`<div class="g-chips" role="group" aria-label="${t('dir.city')}">
+      ${['', ...cities].map((c) => html`<button type="button" class="g-chip" data-city="${c}" aria-pressed="${String(c === city)}">${c || t('dir.anyCity')}</button>`)}</div>`);
+  };
+
+  const search = async () => {
+    const mine = ++seq;
+    root.querySelector('[data-results-title]').textContent = input.value.trim() || city ? t('dir.found') : t('dir.all');
     try {
-      await venue(code);
-      navigate(`/g/${enc(code)}`);
-    } catch (err) {
-      errorEl.textContent = err.status === 404 ? t('landing.notFound') : err.message;
-      errorEl.hidden = false;
+      const r = await get(`/api/guest/directory?q=${enc(input.value.trim())}&city=${enc(city)}`);
+      if (mine !== seq) return;
+      renderCities(r.cities);
+      setHtml(resultsEl, r.results.length ? html`${r.results.map(placeCard)}` : html`<p class="g-empty">${t('dir.none')}</p>`);
+    } catch (e) {
+      if (mine === seq) setHtml(resultsEl, html`<p class="g-empty">${e.message}</p>`);
     }
+  };
+
+  input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, SEARCH_DELAY_MS); });
+  root.querySelector('form').addEventListener('submit', (e) => { e.preventDefault(); clearTimeout(timer); void search(); });
+  citiesEl.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-city]');
+    if (!b) return;
+    city = b.dataset.city;
+    void search();
   });
+  void search();
+  if (session.customer) {
+    get('/api/guest/me/places').then((places) => {
+      if (!places.length) return;
+      setHtml(root.querySelector('[data-mine]'), html`<h2 class="g-cat">${t('dir.mine')}</h2><div class="g-actions">${places.map(placeCard)}</div>`);
+    }).catch(() => { /* the search still works without "my places" */ });
+  }
 }
 
 const tile = (href, mark, title, sub) => html`<a class="g-tile" href="${href}" data-link><span class="g-tile__mark" aria-hidden="true">${mark}</span>
@@ -145,11 +187,12 @@ const tile = (href, mark, title, sub) => html`<a class="g-tile" href="${href}" d
 
 function venueHome(root, v) {
   const company = v.company.code;
-  setHtml(root, html`<section class="g-hero"><p class="g-hero__eyebrow">${t('venue.welcome')}</p><h1 class="g-hero__title">${v.company.name}</h1>
-      <p class="g-hero__text">${heroHint(v)}</p></section>
+  setHtml(root, html`<a class="g-link g-back" href="/g/" data-link>${t('dir.back')}</a>
+    <section class="g-hero"><p class="g-hero__eyebrow">${t('venue.welcome')}</p><h1 class="g-hero__title">${v.company.name}</h1>
+      <p class="g-hero__text">${heroHint(v)}</p>${v.stores.length === 1 && placeLine(v.stores[0]) && html`<p class="g-hero__text">${placeLine(v.stores[0])}</p>`}</section>
     ${v.stores.length > 1 && html`<h2 class="g-cat">${t('venue.pickStore')}</h2>`}
     <div class="g-actions">${v.stores.length > 1
-      ? v.stores.map((s) => tile(`/g/${enc(company)}/${enc(s.code)}`, '✦', s.name, t('venue.storeSub')))
+      ? v.stores.map((s) => tile(`/g/${enc(company)}/${enc(s.code)}`, '✦', s.name, placeLine(s) || t('venue.storeSub')))
       : storeTiles(company, v.stores[0], v)}</div>
     <div class="g-actions">${extraTiles(company, v.features ?? {}, v)}</div>`);
 }

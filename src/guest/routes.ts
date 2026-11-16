@@ -27,6 +27,7 @@ import {
 } from './loyalty.ts';
 import { listEvents, saveEvent, upcomingEvents } from './events.ts';
 import { guestSettings, updateGuestSettings } from './settings.ts';
+import { myPlaces, searchDirectory } from './directory.ts';
 
 const HOUR_MS = 60 * 60_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -109,6 +110,8 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
     login: { wechat: Boolean(identities.wechat), alipay: Boolean(identities.alipay), douyin: Boolean(identities.douyin), phone: Boolean(sms), password: true },
     payments: { wechat: Boolean(payProviders.wechat), alipay: Boolean(payProviders.alipay) },
   }));
+  route('GET', '/api/guest/directory', false, ({ db, query }) => searchDirectory(db, query.get('q') ?? '', query.get('city') ?? ''));
+  route('GET', '/api/guest/me/places', false, signedIn(({ db }, id) => myPlaces(db, id)));
   route('GET', '/api/guest/venue/:company', false, ({ db, params }) => venueInfo(db, params[0]));
   route('GET', '/api/guest/venue/:company/:store/menu', false, ({ db, params }) => menu(db, params[0], params[1]));
   route('GET', '/api/guest/table/:token', false, ({ db, params }) => tableInfo(db, params[0]));

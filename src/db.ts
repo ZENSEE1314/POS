@@ -429,6 +429,16 @@ const MIGRATIONS: Array<{ id: number; statements: string[] }> = [
         tenant_id BIGINT NOT NULL REFERENCES tenants(id), issued_by BIGINT NOT NULL, created_at BIGINT NOT NULL)`,
     ],
   },
+  {
+    // Customer app directory: guests search every listed business on the platform by name, city or address. Only
+    // public details are shown; each company's data stays its own.
+    id: 12,
+    statements: [
+      "ALTER TABLE stores ADD COLUMN IF NOT EXISTS city TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE stores ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT ''",
+      'ALTER TABLE tenants ADD COLUMN IF NOT EXISTS listed BOOLEAN NOT NULL DEFAULT TRUE',
+    ],
+  },
 ];
 
 async function migrate(db: Db): Promise<void> {

@@ -19,6 +19,8 @@ export interface GuestSettings {
   pointsPerYuan: number;
   referralPoints: number;
   spinCost: number;
+  /** Shown in the platform-wide customer app search. */
+  listed: boolean;
 }
 
 function parseFeatures(json: string | undefined): Record<Feature, boolean> {
@@ -29,7 +31,9 @@ function parseFeatures(json: string | undefined): Record<Feature, boolean> {
 
 export async function guestSettings(db: Db, tenantId: number): Promise<GuestSettings> {
   const r = await db.one('SELECT * FROM guest_settings WHERE tenant_id = ?', [tenantId]);
+  const tenant = await db.one('SELECT listed FROM tenants WHERE id = ?', [tenantId]);
   return {
+    listed: tenant?.listed ?? true,
     features: parseFeatures(r?.features),
     pointsPerYuan: r?.points_per_yuan ?? DEFAULT_POINTS_PER_YUAN,
     referralPoints: r?.referral_points ?? DEFAULT_REFERRAL_POINTS,
@@ -60,8 +64,10 @@ export async function updateGuestSettings(db: Db, actor: Actor, b: Record<string
     if (!FEATURES.includes(k as Feature) || typeof v !== 'boolean') throw new DomainError(`unknown feature or value: ${k}`, 422);
     features[k as Feature] = v;
   }
+  if (b.listed !== undefined && typeof b.listed !== 'boolean') throw new DomainError('listed must be true or false', 422);
   const next: GuestSettings = {
     features,
+    listed: b.listed === undefined ? cur.listed : (b.listed as boolean),
     pointsPerYuan: b.pointsPerYuan === undefined ? cur.pointsPerYuan : setting(b.pointsPerYuan, 'pointsPerYuan', 0, MAX_POINTS_PER_YUAN),
     referralPoints: b.referralPoints === undefined ? cur.referralPoints : setting(b.referralPoints, 'referralPoints', 0, MAX_POINTS_SETTING),
     spinCost: b.spinCost === undefined ? cur.spinCost : setting(b.spinCost, 'spinCost', 1, MAX_POINTS_SETTING),
@@ -71,6 +77,7 @@ export async function updateGuestSettings(db: Db, actor: Actor, b: Record<string
      ON CONFLICT (tenant_id) DO UPDATE SET features = EXCLUDED.features, points_per_yuan = EXCLUDED.points_per_yuan,
        referral_points = EXCLUDED.referral_points, spin_cost = EXCLUDED.spin_cost`,
     [actor.tenantId, JSON.stringify(next.features), next.pointsPerYuan, next.referralPoints, next.spinCost]);
+  await db.run('UPDATE tenants SET listed = ? WHERE id = ?', [next.listed, actor.tenantId]);
   await audit(db, whoOf(actor), 'guest.settings', 'tenant', actor.tenantId, next);
   return next;
 }

@@ -18,7 +18,7 @@ import { handleNotify, payInstant, startOnlinePayment } from './payments.ts';
 import { buildProviders } from './payments/index.ts';
 import { MockProvider } from './payments/mock.ts';
 import type { OnlineMethod, PayProvider } from './payments/types.ts';
-import { copyCatalog, createStaff, createStore, hqSummary, listStores } from './hq.ts';
+import { copyCatalog, createStaff, createStore, hqSummary, listStores, updateStoreLocation } from './hq.ts';
 import {
   adjustStock, closeShift, collectReceivable, createProduct, createRule, createTable, currentShift, dailyReport, deleteRule,
   listReceivables, listRules, listShifts, listStaff, openShift, searchMembers, updateProduct, updateStaff, updateTable,
@@ -340,6 +340,10 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
     return { ok: true };
   });
   route('GET', '/api/hq/stores', true, ({ db, actor }) => listStores(db, actor));
+  route('PATCH', '/api/hq/stores/:id/location', true, async ({ db, actor, params, body }) => {
+    await updateStoreLocation(db, actor, num(params[0]), body);
+    return { ok: true };
+  });
   route('POST', '/api/hq/stores', true, async ({ db, actor, body }) => ({ storeId: await createStore(db, actor, body) }));
   route('POST', '/api/hq/staff', true, async ({ db, actor, body }) => ({ employeeId: await createStaff(db, actor, body) }));
   route('POST', '/api/hq/catalog/copy', true, ({ db, actor, body }) => {
