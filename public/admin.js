@@ -13,7 +13,7 @@ import { hasModule, isWeighed, fmtStock, fmtKg } from './business.js';
 const TABLE_KINDS = ['bar', 'booth', 'room'];
 const RULE_ROLES = ['sales', 'waiter'];
 const BPS_PER_PERCENT = 100;
-const SECTION_IDS = ['business', 'tables', 'products', 'promotions', 'rules', 'staff', 'printers', 'guestApp', 'locations', 'guestPasswords', 'events', 'rewards', 'prizes'];
+const SECTION_IDS = ['business', 'tables', 'products', 'promotions', 'rules', 'staff', 'printers', 'guestApp', 'appDesign', 'locations', 'guestPasswords', 'events', 'rewards', 'prizes'];
 const STATIONS = ['', 'bar', 'kitchen'];
 const UNITS = ['each', 'kg'];
 const SECTION_LABELS = { business: 'biz.section', promotions: 'promo.section' };
@@ -239,6 +239,8 @@ export function mountAdmin(root) {
       toggleStaff: staffToggle,
       resetPin,
       ...printerActions({ rowOf, reload }),
+      // Sections may bring their own buttons (App design: upload or remove the logo and cover).
+      ...Object.assign({}, ...Object.values(sections).map((s) => s.actions ?? {})),
     },
   });
 }

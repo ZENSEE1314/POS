@@ -69,7 +69,7 @@ export async function mountTable(root, { token, onTitle }) {
     setHtml(root, html`<p class="g-empty">${t('table.notFound')}</p>`);
     return () => {};
   }
-  onTitle?.({ title: info.store.name, subtitle: info.company.name, company: info.company.code });
+  onTitle?.({ title: info.store.name, subtitle: info.company.name, company: info.company.code, theme: info.theme });
   const menu = await get(`/api/guest/venue/${encodeURIComponent(info.company.code)}/${encodeURIComponent(info.store.code)}/menu`);
   const products = new Map(menu.products.map((p) => [p.id, p]));
   const cartKey = `${CART_PREFIX}${token}`;

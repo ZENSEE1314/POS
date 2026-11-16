@@ -6,6 +6,7 @@ import type { OnlineMethod } from '../payments/types.ts';
 import { earnForPayment } from './loyalty.ts';
 import { guestSettings, requireFeature } from './settings.ts';
 import { businessOf, hasModule } from '../business.ts';
+import { themeOf } from './theme.ts';
 
 const MAX_ORDER_LINES = 30;
 const MAX_LINE_QTY = 99;
@@ -74,6 +75,7 @@ export async function venueInfo(db: Db, company: string) {
   return {
     company: { name: t.name, code: t.code }, stores, features: (await guestSettings(db, t.id)).features,
     business: type, orderAhead: modules.delivery, bookings: modules.bookings, tables: modules.tables,
+    theme: await themeOf(db, t.id, t.code),
   };
 }
 
@@ -93,6 +95,7 @@ export async function tableInfo(db: Db, qrToken: string) {
   return {
     company: { name: store.companyName, code: store.companyCode }, store: { name: store.storeName, code: store.storeCode }, table,
     features: (await guestSettings(db, store.tenantId)).features, gifts,
+    theme: await themeOf(db, store.tenantId, store.companyCode),
   };
 }
 

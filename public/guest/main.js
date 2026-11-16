@@ -15,6 +15,8 @@ import { mountAccount, mountBooking } from './account.js';
 import { captureReferral, claimPendingReferral, mountEvents, mountPets, mountRewards, mountSpin, mountSupport } from './extras.js';
 import { mountGames } from './games.js';
 import { mountShopOrder, mountMyOrders } from './shop.js';
+import { applyTheme } from './themes.js';
+import { icon } from './icons.js';
 
 addStrings({
   en: {
@@ -49,7 +51,7 @@ const EXTRAS = {
 const appEl = document.getElementById('app');
 const venueCache = new Map();
 let cleanup = null;
-let header = { title: '', subtitle: '', company: '', nav: null };
+let header = { title: '', subtitle: '', company: '', nav: null, logo: null };
 const MAX_TABS = 5;
 
 const enc = encodeURIComponent;
@@ -78,33 +80,38 @@ function tabsFor(v, store = v.stores[0]) {
   const company = enc(v.company.code);
   const f = v.features ?? {};
   const optional = [
-    v.bookings !== false && store && { href: `/g/${company}/${enc(store.code)}/book`, icon: '◷', label: t('nav.book') },
-    f.loyalty && { href: `/g/${company}/rewards`, icon: '◆', label: t('venue.rewards') },
-    f.games && { href: `/g/${company}/games`, icon: '⚄', label: t('nav.games') },
-    f.events && { href: `/g/${company}/events`, icon: '★', label: t('venue.events') },
-    f.support && { href: `/g/${company}/support`, icon: '✉', label: t('venue.support') },
+    v.bookings !== false && store && { href: `/g/${company}/${enc(store.code)}/book`, icon: 'calendar', label: t('nav.book') },
+    f.loyalty && { href: `/g/${company}/rewards`, icon: 'gift', label: t('venue.rewards') },
+    f.games && { href: `/g/${company}/games`, icon: 'dice', label: t('nav.games') },
+    f.events && { href: `/g/${company}/events`, icon: 'star', label: t('venue.events') },
+    f.support && { href: `/g/${company}/support`, icon: 'chat', label: t('venue.support') },
   ].filter(Boolean);
   return [
-    { href: `/g/${company}`, icon: '⌂', label: t('nav.home') },
+    { href: `/g/${company}`, icon: 'home', label: t('nav.home') },
     ...optional.slice(0, MAX_TABS - 2),
-    { href: `/g/${company}/account`, icon: '☺', label: t('nav.account') },
+    { href: `/g/${company}/account`, icon: 'user', label: t('nav.account') },
   ];
 }
 
 const tabBar = (tabs) => html`<nav class="g-tabbar" aria-label="${t('nav.label')}">${tabs.map((tab) =>
   html`<a href="${tab.href}" data-link ${raw(location.pathname === tab.href ? 'aria-current="page"' : '')}>
-    <span class="g-tabbar__icon" aria-hidden="true">${tab.icon}</span><span>${tab.label}</span></a>`)}</nav>`;
+    ${icon(tab.icon, 'g-tabbar__icon')}<span>${tab.label}</span></a>`)}</nav>`;
+
+/** The company logo when it has one, else a neutral mark. */
+const brandMark = (logo) => (logo
+  ? html`<img class="g-logo g-logo--img" src="${logo}" alt="" width="36" height="36">`
+  : html`<span class="g-logo" aria-hidden="true">${icon('store')}</span>`);
 
 function frame() {
-  const { title, subtitle, company, nav } = header;
+  const { title, subtitle, company, nav, logo } = header;
   appEl.classList.toggle('has-tabbar', Boolean(nav));
   setHtml(appEl, html`<header class="g-top">
-      <a class="g-brand" href="${company ? `/g/${enc(company)}` : '/g/'}" data-link><span class="g-logo" aria-hidden="true">✦</span>
+      <a class="g-brand" href="${company ? `/g/${enc(company)}` : '/g/'}" data-link>${brandMark(logo)}
         <span><span class="g-brand__name">${title || t('app.name')}</span>${subtitle && html`<span class="g-brand__sub">${subtitle}</span>`}</span></a>
       <div class="g-top__tools">
         <div class="g-lang" role="group" aria-label="${t('lang.label')}">${LANGS.map((l) =>
           html`<button type="button" data-lang="${l}" aria-pressed="${String(getLang() === l)}" lang="${l === 'zh' ? 'zh-CN' : 'en'}">${t(`lang.${l}`)}</button>`)}</div>
-        ${company && html`<a class="g-btn g-btn--small" href="/g/${enc(company)}/account" data-link aria-label="${t('venue.account')}">${session.customer ? '☺' : t('login.title')}</a>`}
+        ${company && html`<a class="g-btn g-btn--small" href="/g/${enc(company)}/account" data-link aria-label="${t('venue.account')}">${session.customer ? icon('user') : t('login.title')}</a>`}
       </div></header>
     <main id="main"></main>
     <p class="g-foot">${t('foot.text')}</p>
@@ -126,9 +133,10 @@ const placeCard = (e) => {
   const cities = [...new Set(e.stores.map((s) => s.city).filter(Boolean))];
   const kindAndCity = [tOr(`biz.${e.company.business}`, ''), ...cities].filter(Boolean).join(' · ');
   const detail = e.stores.length === 1 ? e.stores[0].address : t('dir.locations', { n: e.stores.length });
-  return html`<a class="g-tile" href="/g/${enc(e.company.code)}" data-link><span class="g-tile__mark" aria-hidden="true">✦</span>
+  return html`<a class="g-tile g-tile--place" href="/g/${enc(e.company.code)}" data-link>
+    ${e.company.logo ? html`<img class="g-tile__logo" src="${e.company.logo}" alt="" width="48" height="48" loading="lazy">` : html`<span class="g-tile__mark">${icon('store')}</span>`}
     <span class="g-tile__text"><strong>${e.company.name}</strong>
-      <span>${kindAndCity}${kindAndCity && detail && html`<br>`}${detail}</span></span></a>`;
+      <span>${kindAndCity}${kindAndCity && detail && html`<br>`}${detail}</span></span>${icon('chevron', 'g-tile__chevron')}</a>`;
 };
 
 /** Every listed business on the platform in one place: search by name, city or address, plus the guest's own places. */
@@ -139,7 +147,7 @@ function landing(root) {
   setHtml(root, html`<section class="g-hero"><p class="g-hero__eyebrow">${t('landing.eyebrow')}</p>
       <h1 class="g-hero__title">${t('dir.title')}</h1><p class="g-hero__text">${t('dir.text')}</p></section>
     <form class="g-search" role="search" novalidate><label class="sr-only" for="q">${t('dir.search')}</label>
-      <input id="q" name="q" type="search" placeholder="${t('dir.placeholder')}" autocomplete="off" enterkeyhint="search"></form>
+      ${icon('search', 'g-search__icon')}<input id="q" name="q" type="search" placeholder="${t('dir.placeholder')}" autocomplete="off" enterkeyhint="search"></form>
     <div data-cities></div><div data-mine></div><h2 class="g-cat" data-results-title>${t('dir.all')}</h2>
     <div class="g-actions" data-results aria-live="polite">${skeleton(3)}</div>`);
   const input = root.querySelector('#q');
@@ -182,59 +190,84 @@ function landing(root) {
   }
 }
 
-const tile = (href, mark, title, sub) => html`<a class="g-tile" href="${href}" data-link><span class="g-tile__mark" aria-hidden="true">${mark}</span>
-  <span class="g-tile__text"><strong>${title}</strong><span>${sub}</span></span></a>`;
+const tile = (href, iconName, title, sub) => html`<a class="g-tile" href="${href}" data-link><span class="g-tile__mark">${icon(iconName)}</span>
+  <span class="g-tile__text"><strong>${title}</strong><span>${sub}</span></span>${icon('chevron', 'g-tile__chevron')}</a>`;
+
+/** Grid or list, as the company chose in Admin > App design. */
+const actionsClass = (v) => (v.theme?.layout === 'grid' ? 'g-actions g-actions--grid' : 'g-actions');
+
+/** Cover photo (or a brand-colour banner), the company's own headline and tagline, and its logo. */
+function heroHtml(v, eyebrow, title, extra = '') {
+  const th = v.theme ?? {};
+  return html`<section class="g-cover ${th.cover ? 'g-cover--photo' : ''}">
+    ${th.cover && html`<img class="g-cover__img" src="${th.cover}" alt="" width="1200" height="600">`}
+    <div class="g-cover__body">
+      ${th.logo && html`<img class="g-cover__logo" src="${th.logo}" alt="" width="64" height="64">`}
+      <p class="g-hero__eyebrow">${eyebrow}</p><h1 class="g-hero__title">${title}</h1>
+      <p class="g-hero__text">${th.tagline || heroHint(v)}</p>${extra}
+    </div></section>`;
+}
 
 function venueHome(root, v) {
   const company = v.company.code;
-  setHtml(root, html`<a class="g-link g-back" href="/g/" data-link>${t('dir.back')}</a>
-    <section class="g-hero"><p class="g-hero__eyebrow">${t('venue.welcome')}</p><h1 class="g-hero__title">${v.company.name}</h1>
-      <p class="g-hero__text">${heroHint(v)}</p>${v.stores.length === 1 && placeLine(v.stores[0]) && html`<p class="g-hero__text">${placeLine(v.stores[0])}</p>`}</section>
+  const where = v.stores.length === 1 && placeLine(v.stores[0]);
+  setHtml(root, html`<a class="g-back" href="/g/" data-link>${icon('back')}<span>${t('dir.allShort')}</span></a>
+    ${heroHtml(v, t('venue.welcome'), v.theme?.headline || v.company.name, where ? html`<p class="g-cover__where">${icon('pin')}<span>${where}</span></p>` : '')}
     ${v.stores.length > 1 && html`<h2 class="g-cat">${t('venue.pickStore')}</h2>`}
-    <div class="g-actions">${v.stores.length > 1
-      ? v.stores.map((s) => tile(`/g/${enc(company)}/${enc(s.code)}`, '✦', s.name, placeLine(s) || t('venue.storeSub')))
+    <div class="${actionsClass(v)}">${v.stores.length > 1
+      ? v.stores.map((s) => tile(`/g/${enc(company)}/${enc(s.code)}`, 'pin', s.name, placeLine(s) || t('venue.storeSub')))
       : storeTiles(company, v.stores[0], v)}</div>
-    <div class="g-actions">${extraTiles(company, v.features ?? {}, v)}</div>`);
+    <h2 class="g-cat">${t('venue.more')}</h2>
+    <div class="${actionsClass(v)}">${extraTiles(company, v.features ?? {}, v)}</div>`);
 }
 
 /** Bars keep their own words; other businesses get wording for their kind (menu vs products, booking vs appointment). */
 const word = (v, key) => (v.business && v.business !== 'bar' ? tOr(`${key}.${v.business}`, tOr(`${key}.other`, t(key))) : t(key));
 
 const storeTiles = (company, s, v) => [
-  v.orderAhead && tile(`/g/${enc(company)}/${enc(s.code)}/order`, '🛍', t('shop.order'), t('shop.orderSub')),
-  tile(`/g/${enc(company)}/${enc(s.code)}/menu`, '≡', word(v, 'venue.menu'), word(v, 'venue.menuSub')),
-  v.bookings !== false && tile(`/g/${enc(company)}/${enc(s.code)}/book`, '◷', word(v, 'venue.book'), word(v, 'venue.bookSub')),
+  v.orderAhead && tile(`/g/${enc(company)}/${enc(s.code)}/order`, 'bag', t('shop.order'), t('shop.orderSub')),
+  tile(`/g/${enc(company)}/${enc(s.code)}/menu`, 'menu', word(v, 'venue.menu'), word(v, 'venue.menuSub')),
+  v.bookings !== false && tile(`/g/${enc(company)}/${enc(s.code)}/book`, 'calendar', word(v, 'venue.book'), word(v, 'venue.bookSub')),
 ];
 const heroHint = (v) => (v.tables === false ? '' : t('venue.scanHint'));
 
 const extraTiles = (company, f, v) => [
-  v.orderAhead && tile(`/g/${enc(company)}/orders`, '▤', t('shop.mine'), t('shop.mineSub')),
-  f.events && tile(`/g/${enc(company)}/events`, '★', t('venue.events'), word(v, 'venue.eventsSub')),
-  f.loyalty && tile(`/g/${enc(company)}/rewards`, '◆', t('venue.rewards'), t('venue.rewardsSub')),
-  f.games && tile(`/g/${enc(company)}/games`, '⚄', t('venue.games'), t('venue.gamesSub')),
-  f.pets && tile(`/g/${enc(company)}/pets`, '🐾', t('venue.pets'), t('venue.petsSub')),
-  f.support && tile(`/g/${enc(company)}/support`, '✉', t('venue.support'), t('venue.supportSub')),
-  tile(`/g/${enc(company)}/account`, '☺', t('venue.account'), word(v, 'venue.accountSub')),
+  v.orderAhead && tile(`/g/${enc(company)}/orders`, 'receipt', t('shop.mine'), t('shop.mineSub')),
+  f.events && tile(`/g/${enc(company)}/events`, 'star', t('venue.events'), word(v, 'venue.eventsSub')),
+  f.loyalty && tile(`/g/${enc(company)}/rewards`, 'gift', t('venue.rewards'), t('venue.rewardsSub')),
+  f.games && tile(`/g/${enc(company)}/games`, 'dice', t('venue.games'), t('venue.gamesSub')),
+  f.pets && tile(`/g/${enc(company)}/pets`, 'paw', t('venue.pets'), t('venue.petsSub')),
+  f.support && tile(`/g/${enc(company)}/support`, 'chat', t('venue.support'), t('venue.supportSub')),
+  tile(`/g/${enc(company)}/account`, 'user', t('venue.account'), word(v, 'venue.accountSub')),
 ];
 
 function storeHome(root, v, store) {
-  setHtml(root, html`<section class="g-hero"><p class="g-hero__eyebrow">${v.company.name}</p><h1 class="g-hero__title">${store.name}</h1>
-    <p class="g-hero__text">${heroHint(v)}</p></section><div class="g-actions">${storeTiles(v.company.code, store, v)}</div>
-    <div class="g-actions">${extraTiles(v.company.code, v.features ?? {}, v)}</div>`);
+  const where = placeLine(store);
+  setHtml(root, html`${heroHtml(v, v.company.name, store.name, where ? html`<p class="g-cover__where">${icon('pin')}<span>${where}</span></p>` : '')}
+    <div class="${actionsClass(v)}">${storeTiles(v.company.code, store, v)}</div>
+    <h2 class="g-cat">${t('venue.more')}</h2>
+    <div class="${actionsClass(v)}">${extraTiles(v.company.code, v.features ?? {}, v)}</div>`);
+}
+
+/** Sets the header and the company's theme together, so the page never shows one company's colours with another's name. */
+function useVenue(v, h) {
+  applyTheme(v.theme);
+  header = { ...h, logo: v.theme?.logo ?? null };
 }
 
 async function route() {
   cleanup?.();
   cleanup = null;
   const [company, second, third, fourth] = parts();
-  header = { title: '', subtitle: '', company: company ?? '', nav: null };
+  header = { title: '', subtitle: '', company: company ?? '', nav: null, logo: null };
+  if (!company) applyTheme(null);
   let root = frame();
   try {
     if (!company) { landing(root); return; }
     setHtml(root, skeleton(4));
     if (second === undefined || second === 'account' || EXTRAS[second]) {
       const v = await venue(company);
-      header = { title: v.company.name, subtitle: '', company: v.company.code, nav: tabsFor(v) };
+      useVenue(v, { title: v.company.name, subtitle: '', company: v.company.code, nav: tabsFor(v) });
       root = frame();
       void claimPendingReferral(v.company.code);
       if (second === 'account') await mountAccount(root, { company: v.company.code, navigate });
@@ -246,14 +279,14 @@ async function route() {
       setHtml(root, skeleton(5));
       cleanup = await mountTable(root, {
         token: fourth,
-        onTitle: (h) => { header = { ...h }; const r = frame(); r.replaceWith(root); },
+        onTitle: (h) => { useVenue({ theme: h.theme }, h); const r = frame(); r.replaceWith(root); },
       });
       return;
     }
     const v = await venue(company);
     const store = v.stores.find((s) => s.code.toLowerCase() === second.toLowerCase());
     if (!store) throw Object.assign(new Error(t('venue.notFound')), { status: 404 });
-    header = { title: store.name, subtitle: v.company.name, company: v.company.code, nav: tabsFor(v, store) };
+    useVenue(v, { title: store.name, subtitle: v.company.name, company: v.company.code, nav: tabsFor(v, store) });
     root = frame();
     if (third === 'menu') await mountMenuBrowse(root, { company: v.company.code, store: store.code });
     else if (third === 'order' && v.orderAhead) cleanup = await mountShopOrder(root, { company: v.company.code, store: store.code, navigate });

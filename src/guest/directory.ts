@@ -6,7 +6,9 @@ const MAX_QUERY = 60;
 const MAX_CITIES = 30;
 
 export interface DirectoryStore { name: string; code: string; city: string; address: string }
-export interface DirectoryEntry { company: { name: string; code: string; business: string }; stores: DirectoryStore[] }
+export interface DirectoryEntry { company: { name: string; code: string; business: string; logo: string | null }; stores: DirectoryStore[] }
+
+const LOGO_VERSION = "(SELECT i.updated_at FROM tenant_images i WHERE i.tenant_id = t.id AND i.kind = 'logo') AS logo_v";
 
 /** "50%_off" must match those characters literally, not as LIKE wildcards. */
 const likePattern = (q: string) => `%${q.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
@@ -16,7 +18,8 @@ function groupByCompany(rows: any[]): DirectoryEntry[] {
   for (const r of rows) {
     let e = out.get(r.company_code);
     if (!e) {
-      e = { company: { name: r.company_name, code: r.company_code, business: r.business_type }, stores: [] };
+      const logo = r.logo_v ? `/api/guest/images/${encodeURIComponent(r.company_code)}/logo?v=${r.logo_v}` : null;
+      e = { company: { name: r.company_name, code: r.company_code, business: r.business_type, logo }, stores: [] };
       out.set(r.company_code, e);
     }
     e.stores.push({ name: r.store_name, code: r.store_code, city: r.city, address: r.address });
@@ -24,7 +27,8 @@ function groupByCompany(rows: any[]): DirectoryEntry[] {
   return [...out.values()];
 }
 
-const DIRECTORY_SQL = `SELECT t.name AS company_name, t.code AS company_code, t.business_type, s.name AS store_name, s.code AS store_code, s.city, s.address
+const DIRECTORY_SQL = `SELECT t.name AS company_name, t.code AS company_code, t.business_type, s.name AS store_name, s.code AS store_code, s.city, s.address,
+    ${LOGO_VERSION}
   FROM tenants t JOIN stores s ON s.tenant_id = t.id WHERE t.active AND t.listed AND s.active`;
 
 /**
@@ -62,7 +66,8 @@ export async function searchDirectory(db: Db, rawQuery: unknown, rawCity: unknow
  */
 export async function myPlaces(db: Db, customerId: number): Promise<DirectoryEntry[]> {
   const rows = await db.all(
-    `SELECT t.name AS company_name, t.code AS company_code, t.business_type, s.name AS store_name, s.code AS store_code, s.city, s.address
+    `SELECT t.name AS company_name, t.code AS company_code, t.business_type, s.name AS store_name, s.code AS store_code, s.city, s.address,
+       ${LOGO_VERSION}
      FROM tenants t JOIN stores s ON s.tenant_id = t.id
      JOIN (SELECT tenant_id, MAX(ts) AS last FROM (
              SELECT st.tenant_id, o.created_at AS ts FROM guest_orders o JOIN stores st ON st.id = o.store_id WHERE o.customer_id = ?

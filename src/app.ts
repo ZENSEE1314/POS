@@ -29,7 +29,7 @@ import { logEvent, Metrics, RateLimiter, selfHeal } from './ops.ts';
 import { buildAssetManifest } from './static-assets.ts';
 import { syncOps } from './sync.ts';
 import { cleanPhone, normalizePhone } from './phone.ts';
-import { HtmlPage, Redirect } from './responses.ts';
+import { FileBody, HtmlPage, Redirect } from './responses.ts';
 import { AlipayProvider } from './payments/alipay.ts';
 import { buildIdentityProviders } from './guest/identity.ts';
 import { buildSms } from './guest/sms.ts';
@@ -470,6 +470,8 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
             return void res.end();
           }
           if (out instanceof HtmlPage) return send(res, 200, out.body, 'text/html; charset=utf-8', { 'Cache-Control': 'no-store' });
+          // Image URLs carry ?v=<updated_at>, so a new upload gets a new URL and the old one can be cached for long.
+          if (out instanceof FileBody) return send(res, 200, out.bytes, out.mime, { 'Cache-Control': 'public, max-age=86400' });
           return send(res, 200, out);
         }
         throw new DomainError('not found', 404);

@@ -306,3 +306,32 @@ table.data .num, .num { text-align: right; font-variant-numeric: tabular-nums; w
 .table-qr .qr { width: min(260px, 70vw); height: auto; border-radius: var(--radius-md); }
 .table-qr__link { font-family: var(--font-mono); font-size: var(--text-xs); overflow-wrap: anywhere; color: var(--color-muted); }
 .reset-code { margin: var(--space-2) 0 var(--space-3); font-family: var(--font-mono); font-size: var(--text-2xl); letter-spacing: 0.15em; color: var(--color-fg-strong); }
+
+/* Admin > App design: the side panel and a small phone drawn with the company's theme variables (set inline). */
+.design { display: grid; gap: var(--space-6); grid-template-columns: 300px 1fr; align-items: start; margin-top: var(--space-4); }
+@media (max-width: 768px) { .design { grid-template-columns: 1fr; justify-items: center; } }
+.design__side { min-width: 0; width: 100%; }
+.design__buttons { flex-wrap: wrap; margin-top: var(--space-4); }
+.swatch { display: inline-block; width: 16px; height: 16px; vertical-align: -3px; border-radius: var(--radius-sm); border: 1px solid var(--color-border); }
+.design-preview {
+  width: 300px; padding: var(--space-3); border-radius: 32px; color: var(--color-fg); font-family: var(--font-body);
+  background: radial-gradient(260px 160px at 0% 0%, var(--color-bg-glow-a), transparent 70%), linear-gradient(180deg, var(--color-bg), var(--color-bg-raised));
+  border: 6px solid var(--color-surface-solid); box-shadow: var(--shadow-lg);
+}
+.design-preview__top { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-1) var(--space-3); font-size: var(--text-sm); color: var(--color-fg-strong); }
+.design-preview__top img, .design-preview__mark { width: 24px; height: 24px; border-radius: var(--radius-sm); object-fit: cover; }
+.design-preview__mark { background: var(--color-primary); }
+.design-preview__cover { position: relative; overflow: hidden; display: flex; align-items: flex-end; min-height: 120px; padding: var(--space-4); border-radius: var(--radius-lg); background: var(--color-surface); border: 1px solid var(--color-border); }
+.design-preview__cover > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.design-preview__cover > div { position: relative; display: grid; gap: 2px; }
+.design-preview__cover small { font-size: 10px; font-weight: var(--weight-bold); letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-accent-text); }
+.design-preview__cover b { font-family: var(--font-display); font-size: var(--text-lg); color: var(--color-fg-strong); }
+.design-preview__cover span { font-size: var(--text-xs); color: var(--color-muted); }
+.design-preview__cover--photo { min-height: 150px; border-color: transparent; }
+.design-preview__cover--photo > div { margin: calc(var(--space-4) * -1); padding: var(--space-8) var(--space-4) var(--space-4); width: calc(100% + var(--space-8)); background: linear-gradient(180deg, transparent, var(--color-photo-scrim)); }
+.design-preview__cover--photo small, .design-preview__cover--photo b, .design-preview__cover--photo span { color: var(--color-on-photo); }
+.design-preview__tiles { display: grid; gap: var(--space-2); margin-top: var(--space-3); }
+.design-preview__tiles--grid { grid-template-columns: 1fr 1fr; }
+.design-preview__tile { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2); font-size: var(--text-sm); color: var(--color-fg-strong); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.design-preview__tile i { width: 24px; height: 24px; border-radius: var(--radius-sm); background: var(--color-surface-hi); border: 1px solid var(--color-border-strong); }
+.design-preview__btn { margin-top: var(--space-3); padding: var(--space-2); text-align: center; font-size: var(--text-sm); font-weight: var(--weight-bold); border-radius: var(--radius-md); color: var(--color-primary-fg); background: var(--color-primary); }

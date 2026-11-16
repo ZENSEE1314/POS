@@ -8,6 +8,16 @@ export class Redirect {
   }
 }
 
+/** A route result sent as raw bytes (company logo and cover photos). */
+export class FileBody {
+  readonly mime: string;
+  readonly bytes: Buffer;
+  constructor(mime: string, bytes: Buffer) {
+    this.mime = mime;
+    this.bytes = bytes;
+  }
+}
+
 /** A route result sent as an HTML page instead of JSON (the dev-only mock consent screen). */
 export class HtmlPage {
   readonly body: string;

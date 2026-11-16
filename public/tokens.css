@@ -47,6 +47,10 @@
   --color-qr-fg: #120e24;
   --color-scrim: rgba(10, 7, 22, 0.72);
   --color-star: #fff3c4;
+  /* text laid over a photo: always light on a dark fade, whatever the theme */
+  --color-on-photo: #ffffff;
+  --color-photo-scrim: rgba(5, 5, 10, 0.82);
+  --color-photo-ring: rgba(255, 255, 255, 0.85);
 
   /* spacing scale */
   --space-1: 4px;

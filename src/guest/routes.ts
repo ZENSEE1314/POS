@@ -28,6 +28,8 @@ import {
 import { listEvents, saveEvent, upcomingEvents } from './events.ts';
 import { guestSettings, updateGuestSettings } from './settings.ts';
 import { myPlaces, searchDirectory } from './directory.ts';
+import { imageOf, removeImage, saveImage, staffTheme, updateTheme } from './theme.ts';
+import { FileBody } from '../responses.ts';
 
 const HOUR_MS = 60 * 60_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -112,6 +114,10 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
   }));
   route('GET', '/api/guest/directory', false, ({ db, query }) => searchDirectory(db, query.get('q') ?? '', query.get('city') ?? ''));
   route('GET', '/api/guest/me/places', false, signedIn(({ db }, id) => myPlaces(db, id)));
+  route('GET', '/api/guest/images/:company/:kind', false, async ({ db, params }) => {
+    const img = await imageOf(db, params[0], params[1]);
+    return new FileBody(img.mime, img.bytes);
+  });
   route('GET', '/api/guest/venue/:company', false, ({ db, params }) => venueInfo(db, params[0]));
   route('GET', '/api/guest/venue/:company/:store/menu', false, ({ db, params }) => menu(db, params[0], params[1]));
   route('GET', '/api/guest/table/:token', false, ({ db, params }) => tableInfo(db, params[0]));
@@ -282,6 +288,10 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
   route('GET', '/api/vouchers/:code', true, ({ db, actor, params }) => checkVoucher(db, actor, params[0]));
   route('POST', '/api/vouchers/:code/use', true, ({ db, actor, params }) => useVoucher(db, actor, params[0]));
   route('POST', '/api/guest-password-resets', true, ({ db, actor, body }) => issuePasswordReset(db, actor, body.phone));
+  route('GET', '/api/guest-theme', true, ({ db, actor }) => staffTheme(db, actor));
+  route('PATCH', '/api/guest-theme', true, ({ db, actor, body }) => updateTheme(db, actor, body));
+  route('PUT', '/api/guest-theme/images/:kind', true, ({ db, actor, params, body }) => saveImage(db, actor, params[0], body.dataUrl));
+  route('DELETE', '/api/guest-theme/images/:kind', true, ({ db, actor, params }) => removeImage(db, actor, params[0]));
   route('GET', '/api/guest-settings', true, ({ db, actor }) => guestSettings(db, actor.tenantId));
   route('PATCH', '/api/guest-settings', true, ({ db, actor, body }) => updateGuestSettings(db, actor, body));
   route('GET', '/api/loyalty-rewards', true, ({ db, actor }) => listRewards(db, actor));

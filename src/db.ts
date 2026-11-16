@@ -439,6 +439,18 @@ const MIGRATIONS: Array<{ id: number; statements: string[] }> = [
       'ALTER TABLE tenants ADD COLUMN IF NOT EXISTS listed BOOLEAN NOT NULL DEFAULT TRUE',
     ],
   },
+  {
+    // Customer app design per company: a theme preset, brand colour, wording, layout, and a logo and cover photo.
+    id: 13,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS guest_theme (
+        tenant_id BIGINT PRIMARY KEY REFERENCES tenants(id), preset TEXT NOT NULL DEFAULT 'night', accent TEXT NOT NULL DEFAULT '',
+        headline TEXT NOT NULL DEFAULT '', tagline TEXT NOT NULL DEFAULT '', layout TEXT NOT NULL DEFAULT 'list', updated_at BIGINT NOT NULL)`,
+      `CREATE TABLE IF NOT EXISTS tenant_images (
+        tenant_id BIGINT NOT NULL REFERENCES tenants(id), kind TEXT NOT NULL CHECK (kind IN ('logo','cover')),
+        mime TEXT NOT NULL, data TEXT NOT NULL, updated_at BIGINT NOT NULL, PRIMARY KEY (tenant_id, kind))`,
+    ],
+  },
 ];
 
 async function migrate(db: Db): Promise<void> {

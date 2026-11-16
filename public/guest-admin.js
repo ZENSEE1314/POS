@@ -1,9 +1,48 @@
 // Admin sections for the customer app: feature switches and point settings, location details for the app search,
 // guest password resets, events, loyalty rewards and the prize wheel.
 import { t } from './i18n.js';
-import { get, post, patch } from './session.js';
+import { app, get, post, patch, put, del } from './session.js';
 import { html, fmtDateTime } from './util.js';
-import { formDialog, dataTable, badge, toast, infoDialog } from './ui.js';
+import { formDialog, dataTable, badge, toast, infoDialog, confirmDialog } from './ui.js';
+import { PRESETS, PRESET_IDS, themeVars } from './guest/themes.js';
+
+const LAYOUTS = ['list', 'grid'];
+/** Longest side after the browser shrinks an upload; keeps files small enough for the server's limit. */
+const IMAGE_EDGE = { logo: 400, cover: 1200 };
+const JPEG_QUALITY = 0.82;
+const PNG_MIME = 'image/png';
+
+/** Shrinks a picked photo in the browser and returns a data: URL (logos keep transparency as PNG). */
+async function shrinkImage(file, kind) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, IMAGE_EDGE[kind] / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return kind === 'logo' && file.type === PNG_MIME ? canvas.toDataURL(PNG_MIME) : canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+}
+
+const pickFile = () => new Promise((resolve) => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/jpeg,image/png,image/webp';
+  input.addEventListener('change', () => resolve(input.files?.[0] ?? null));
+  input.click();
+});
+
+/** Inline custom properties so the preview below shows the company's theme without touching the staff app. */
+const previewStyle = (theme) => Object.entries(themeVars(theme).vars).map(([k, v]) => `${k}:${v}`).join(';');
+
+/** A small phone mock-up of the customer app home, drawn with the chosen theme. */
+const designPreview = (theme, companyName) => html`<div class="design-preview" style="${previewStyle(theme)}" data-scheme="${themeVars(theme).scheme}" aria-label="${t('ds.preview')}">
+  <div class="design-preview__top">${theme.logo ? html`<img src="${theme.logo}" alt="" width="24" height="24">` : html`<span class="design-preview__mark"></span>`}<strong>${companyName}</strong></div>
+  <div class="design-preview__cover ${theme.cover ? 'design-preview__cover--photo' : ''}">
+    ${theme.cover && html`<img src="${theme.cover}" alt="" width="300" height="150">`}
+    <div><small>${t('ds.welcome')}</small><b>${theme.headline || companyName}</b><span>${theme.tagline || t('ds.taglineSample')}</span></div></div>
+  <div class="design-preview__tiles ${theme.layout === 'grid' ? 'design-preview__tiles--grid' : ''}">
+    ${['ds.sampleMenu', 'ds.sampleBook', 'ds.sampleRewards', 'ds.sampleGames'].map((k) => html`<div class="design-preview__tile"><i></i><span>${t(k)}</span></div>`)}</div>
+  <div class="design-preview__btn">${t('ds.sampleButton')}</div></div>`;
 
 const FEATURES = ['service', 'song', 'bottle', 'gift', 'loyalty', 'referral', 'spin', 'events', 'games', 'support', 'pets'];
 const PRIZE_KINDS = ['none', 'points', 'voucher'];
@@ -17,6 +56,21 @@ const both = (zh, en) => (en ? html`${zh}<br><span class="muted">${en}</span>` :
 /** Section objects in the shape admin.js uses: load rows, an add button, a table view and an add/edit dialog. */
 export function guestAdminSections(reload) {
   let settings = null;
+  let theme = null;
+  const company = () => app.company ?? { name: '', code: '' };
+
+  const upload = (kind) => async () => {
+    const file = await pickFile();
+    if (!file) return;
+    theme = await put(`/api/guest-theme/images/${kind}`, { dataUrl: await shrinkImage(file, kind) });
+    toast(t('ds.uploaded'), 'success');
+    await reload();
+  };
+  const remove = (kind) => async () => {
+    if (!await confirmDialog({ title: t(`ds.remove.${kind}`), message: t('ds.removeAsk'), danger: true, submit: 'common.delete' })) return;
+    theme = await del(`/api/guest-theme/images/${kind}`);
+    await reload();
+  };
   let prizeInfo = { usingDefaults: false, defaults: [] };
 
   const settingsRows = () => [
@@ -37,6 +91,52 @@ export function guestAdminSections(reload) {
   };
 
   return {
+    appDesign: {
+      load: async () => { theme = await get('/api/guest-theme'); return []; },
+      add: 'ds.edit',
+      actions: {
+        dsLogo: upload('logo'), dsCover: upload('cover'), dsRemoveLogo: remove('logo'), dsRemoveCover: remove('cover'),
+      },
+      view: () => html`<p class="muted">${t('ds.intro')}</p>
+        <div class="design">
+          ${designPreview(theme, company().name)}
+          <div class="design__side">
+            ${dataTable({ caption: t('admin.appDesign'), empty: '', rows: [
+              { label: t('ds.preset'), value: t(`ds.preset.${theme.preset}`) },
+              { label: t('ds.accent'), value: html`<span class="swatch" style="background:${theme.accent || PRESETS[theme.preset]?.accent}"></span> ${theme.accent || t('ds.presetColour')}` },
+              { label: t('ds.layout'), value: t(`ds.layout.${theme.layout}`) },
+              { label: t('ds.headline'), value: theme.headline || '-' },
+              { label: t('ds.tagline'), value: theme.tagline || '-' },
+            ], cols: [{ label: t('ga.setting'), cell: (x) => x.label }, { label: t('ga.value'), cell: (x) => x.value }] })}
+            <div class="row design__buttons">
+              <button type="button" class="btn btn--ghost" data-action="dsLogo">${t(theme.logo ? 'ds.changeLogo' : 'ds.addLogo')}</button>
+              ${theme.logo && html`<button type="button" class="btn btn--ghost btn--danger" data-action="dsRemoveLogo">${t('ds.remove.logo')}</button>`}
+              <button type="button" class="btn btn--ghost" data-action="dsCover">${t(theme.cover ? 'ds.changeCover' : 'ds.addCover')}</button>
+              ${theme.cover && html`<button type="button" class="btn btn--ghost btn--danger" data-action="dsRemoveCover">${t('ds.remove.cover')}</button>`}
+              ${company().code && html`<a class="btn btn--ghost" href="/g/${encodeURIComponent(company().code)}" target="_blank" rel="noopener">${t('ds.open')}</a>`}
+            </div>
+            <p class="hint">${t('ds.imageHint')}</p>
+          </div>
+        </div>`,
+      dialog: () => formDialog({
+        title: t('admin.appDesign'), intro: t('ds.intro'),
+        fields: [
+          { name: 'preset', label: t('ds.preset'), type: 'select', value: theme.preset, options: PRESET_IDS.map((p) => ({ value: p, label: t(`ds.preset.${p}`) })) },
+          { name: 'useAccent', label: t('ds.useAccent'), type: 'checkbox', value: Boolean(theme.accent) },
+          { name: 'accent', label: t('ds.accent'), type: 'color', value: theme.accent || PRESETS[theme.preset]?.accent, hint: t('ds.accentHint') },
+          { name: 'layout', label: t('ds.layout'), type: 'select', value: theme.layout, options: LAYOUTS.map((l) => ({ value: l, label: t(`ds.layout.${l}`) })) },
+          { name: 'headline', label: t('ds.headline'), value: theme.headline, placeholder: company().name, hint: t('ds.headlineHint') },
+          { name: 'tagline', label: t('ds.tagline'), type: 'textarea', value: theme.tagline, hint: t('ds.taglineHint') },
+        ],
+        onSubmit: async (v) => {
+          theme = await patch('/api/guest-theme', {
+            preset: v.preset, accent: v.useAccent ? v.accent : '', layout: v.layout, headline: v.headline, tagline: v.tagline,
+          });
+          toast(t('ds.saved'), 'success');
+          await reload();
+        },
+      }),
+    },
     guestApp: {
       load: async () => { settings = await get('/api/guest-settings'); return []; },
       add: 'ga.edit',
