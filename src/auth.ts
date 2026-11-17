@@ -1,4 +1,4 @@
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import type { Db } from './db.ts';
 import { DomainError } from './db.ts';
 
@@ -84,6 +84,15 @@ export async function actorFromToken(db: Db, token: string | undefined): Promise
      JOIN tenants t ON t.id = e.tenant_id WHERE s.token = ? AND s.expires_at > ? AND e.active AND t.active`, [token, Date.now()]);
   if (!r) throw new DomainError('unauthenticated', 401);
   return { id: r.id, name: r.name, role: r.role, tenantId: r.tenant_id, storeId: r.store_id };
+}
+
+/** True when the bearer token is a live staff or guest session. Used to decide how to rate-limit a caller, never to authorise. */
+export async function isLiveSession(db: Db, token: string): Promise<boolean> {
+  const now = Date.now();
+  const staff = await db.one('SELECT 1 AS x FROM sessions WHERE token = ? AND expires_at > ?', [token, now]);
+  if (staff) return true;
+  const guest = await db.one('SELECT 1 AS x FROM guest_sessions WHERE token_hash = ? AND expires_at > ?', [createHash('sha256').update(token).digest('hex'), now]);
+  return Boolean(guest);
 }
 
 /** Tenant-wide roles move their session between stores; store staff cannot. */

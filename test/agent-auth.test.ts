@@ -1282,3 +1282,13 @@ test('the ops_events table keeps only the newest events', async () => {
   assert.ok(n <= 5001, `kept ${n} rows`);
   await fresh.close();
 });
+
+test('rotating random bearer tokens shares one per-ip rate limit, while a real session keeps its own', async () => {
+  const limited = await startApp({ PAY_MODE: 'mock', MOCK_PAY_SECRET: MOCK_SECRET, API_PER_MINUTE: '5' } as NodeJS.ProcessEnv);
+  const attackerIp = { 'x-forwarded-for': '198.51.100.77' };
+  const statuses: number[] = [];
+  for (let i = 0; i < 12; i++) statuses.push((await limited.call('GET', '/api/tables', undefined, `random-token-${i}`, attackerIp)).status);
+  const throttled = statuses.filter((s) => s === 429).length;
+  const real = await limited.call('GET', '/api/tables', undefined, tok.cashier, attackerIp);
+  assert.deepEqual([throttled >= 7, real.status], [true, 200]);
+});

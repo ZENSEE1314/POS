@@ -5,7 +5,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import type { Db } from './db.ts';
 import { audit, DomainError } from './db.ts';
-import { actorFromToken, can, login, require_, switchStore, whoOf } from './auth.ts';
+import { actorFromToken, can, isLiveSession, login, require_, switchStore, whoOf } from './auth.ts';
 import type { Actor } from './auth.ts';
 import { addLine, attachMember, getBill, listOpenTableless, openCounterSale, openTable, payrollSummary, setDiscount, settleIfPaid, transferTable, voidLine } from './bills.ts';
 import { businessOf, requireModule, updateBusiness } from './business.ts';
@@ -47,6 +47,8 @@ const MIME: Record<string, string> = {
 const LOGIN_ATTEMPTS = 10;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 const API_PER_MINUTE = 600;
+/** Whole-IP ceiling as a multiple of the per-caller limit: a venue's tablets share one NAT address, but rotating tokens must not escape. */
+const API_IP_LIMIT_FACTOR = 10;
 const SIGNUPS_PER_HOUR = 5;
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -122,6 +124,7 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
   const metrics = new Metrics();
   const loginLimiter = new RateLimiter(LOGIN_ATTEMPTS, LOGIN_WINDOW_MS);
   const apiLimiter = new RateLimiter(Number(env.API_PER_MINUTE ?? API_PER_MINUTE), 60_000);
+  const apiIpLimiter = new RateLimiter(Number(env.API_PER_MINUTE ?? API_PER_MINUTE) * API_IP_LIMIT_FACTOR, 60_000);
   const signupLimiter = new RateLimiter(SIGNUPS_PER_HOUR, 60 * 60_000);
 
   // Every numeric input is an integer id, fen amount or epoch ms; anything else would reach SQL as NaN/1.5/1e30 and 500.
@@ -450,10 +453,15 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
       }
 
       if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/dev/') || url.pathname.startsWith('/platform/') || url.pathname === '/healthz') {
-        // Limit per session token, not per IP: a whole venue shares one NAT address, so an IP limit would throttle all its tablets.
-        // Unauthenticated calls fall back to a per-IP limit.
-        const bearer = (req.headers.authorization ?? '').replace(/^Bearer /, '');
-        if (url.pathname.startsWith('/api/') && !apiLimiter.allow(bearer ? `tok|${bearer}` : `ip|${ip}`)) throw new DomainError('rate limit exceeded', 429);
+        // A valid session is limited per token, not per IP: a whole venue shares one NAT address, so a plain IP limit would throttle
+        // all its tablets. A bearer that is not a live session is attacker-chosen (random strings would each get a fresh bucket), so
+        // it falls back to the per-IP limit like an unauthenticated call. Every call also counts against a much higher whole-IP bucket.
+        if (url.pathname.startsWith('/api/')) {
+          const bearer = (req.headers.authorization ?? '').replace(/^Bearer /, '');
+          if (!apiIpLimiter.allow(`ip|${ip}`)) throw new DomainError('rate limit exceeded', 429);
+          const key = bearer && (await isLiveSession(db, bearer)) ? `tok|${bearer}` : `ip|${ip}`;
+          if (!apiLimiter.allow(key)) throw new DomainError('rate limit exceeded', 429);
+        }
         const raw = req.method === 'GET' || req.method === 'DELETE' ? '' : await readRaw(req);
         const body = raw ? JSON.parse(raw) : {};
         if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new DomainError('body must be a JSON object', 400);
