@@ -9,6 +9,7 @@ export type Level = 'info' | 'warn' | 'error';
 const MAX_OPS_EVENTS = 5000;
 const PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const LATENCY_WINDOW = 500;
+const WEBHOOK_EVENT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 const ALERT_REPEAT_MS = 6 * 60 * 60 * 1000;
 
 /** One JSON line per event on stdout (Railway captures it) and, for warn/error, a row in ops_events for the monitor UI. */
@@ -160,6 +161,8 @@ export async function selfHeal(db: Db): Promise<HealReport> {
   await alert('negative_stock', ids(negStock), 'products with negative stock: a stocktake or stock-in was missed');
 
   await db.run('DELETE FROM sessions WHERE expires_at < ?', [Date.now()]);
+  // Replay protection only needs recent ids: a replay of an older paid event is a no-op because the payment is already paid.
+  await db.run('DELETE FROM webhook_events WHERE ts < ?', [Date.now() - WEBHOOK_EVENT_RETENTION_MS]);
   await purgeExpiredGuestAuth(db);
   return report;
 }

@@ -1144,3 +1144,17 @@ test('fuzz: garbage bodies and parameters on every admin/stash/booking/hq route 
   const errors = await db.all("SELECT message, detail FROM ops_events WHERE kind = 'http.500'");
   assert.deepEqual(errors, []);
 });
+
+test('selfheal: webhook events older than 90 days are pruned, recent ones kept', async () => {
+  const day = 24 * 60 * 60 * 1000;
+  await db.run("INSERT INTO webhook_events (id, provider, ts) VALUES ('wechat:old-evt', 'wechat', ?), ('wechat:new-evt', 'wechat', ?)", [Date.now() - 91 * day, Date.now() - 89 * day]);
+  await heal();
+  const left = (await db.all("SELECT id FROM webhook_events WHERE id IN ('wechat:old-evt', 'wechat:new-evt')")).map((r: any) => r.id);
+  assert.deepEqual(left, ['wechat:new-evt']);
+});
+
+test('migrations create the hot-path indexes', async () => {
+  const names = (await db.all("SELECT indexname FROM pg_indexes WHERE schemaname = 'public'")).map((r: any) => r.indexname);
+  const wanted = ['audit_ts', 'wallet_ledger_member', 'commission_entries_store_ts', 'stock_movements_store_product_ts', 'payments_provider_ref', 'webhook_events_ts', 'sessions_employee'];
+  assert.deepEqual(wanted.filter((n) => !names.includes(n)), []);
+});

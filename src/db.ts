@@ -482,6 +482,20 @@ const MIGRATIONS: Array<{ id: number; statements: string[] }> = [
       'CREATE INDEX IF NOT EXISTS sessions_employee ON sessions (employee_id)',
     ],
   },
+  {
+    // Indexes for the large append-only tables (reports, ledgers, retention pruning, voucher replay check).
+    id: 16,
+    statements: [
+      // Building indexes on big tables can outlast the pool's statement_timeout; this applies to this transaction only.
+      'SET LOCAL statement_timeout = 0',
+      'CREATE INDEX IF NOT EXISTS audit_ts ON audit (ts)',
+      'CREATE INDEX IF NOT EXISTS wallet_ledger_member ON wallet_ledger (member_id)',
+      'CREATE INDEX IF NOT EXISTS commission_entries_store_ts ON commission_entries (store_id, ts)',
+      'CREATE INDEX IF NOT EXISTS stock_movements_store_product_ts ON stock_movements (store_id, product_id, ts)',
+      'CREATE INDEX IF NOT EXISTS payments_provider_ref ON payments (provider_ref) WHERE provider_ref IS NOT NULL',
+      'CREATE INDEX IF NOT EXISTS webhook_events_ts ON webhook_events (ts)',
+    ],
+  },
 ];
 
 async function migrate(db: Db): Promise<void> {

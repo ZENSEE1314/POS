@@ -169,7 +169,7 @@ Store staff are pinned to one store; `owner` and `finance` are company-wide and 
 
 ## Monitoring and self-healing
 - Every request is a JSON log line (stdout). Warnings and errors are stored in `ops_events` (`GET /platform/ops`), metrics at `GET /platform/metrics`, health at `/healthz`.
-- A check runs every minute (and on `POST /platform/selfheal`): expires stale stash and unpaid online payments, fixes wrong table flags, settles fully-paid bills that never settled; raises alerts for underpaid settled bills, negative stock, and signed payment callbacks that were refused (`webhook.unreconciled`).
+- A check runs every minute (and on `POST /platform/selfheal`): expires stale stash and unpaid online payments, fixes wrong table flags, settles fully-paid bills that never settled; raises alerts for underpaid settled bills, negative stock, and signed payment callbacks that were refused (`webhook.unreconciled`). It also purges expired sessions and prunes `webhook_events` older than 90 days.
 
 ## Offline mode
 The till keeps trading when the internet drops. A service worker (`public/sw.js`) precaches the whole app shell, so the page even reloads with no network; API calls are never cached by it.
