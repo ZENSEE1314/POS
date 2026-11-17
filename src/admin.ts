@@ -174,7 +174,7 @@ export async function deleteRule(db: Db, actor: Actor, id: number): Promise<void
 export function listStaff(db: Db, actor: Actor) {
   require_(actor, 'admin.write');
   return db.all(
-    `SELECT e.id, e.username, e.name, e.role, e.store_id AS "storeId", e.active FROM employees e
+    `SELECT e.id, e.username, e.name, e.role, e.store_id AS "storeId", e.active, e.department_id AS "departmentId", e.phone FROM employees e
      WHERE e.tenant_id = ? AND (e.store_id = ? OR e.store_id IS NULL OR ?) ORDER BY e.id`, [actor.tenantId, actor.storeId, actor.role === 'owner']);
 }
 

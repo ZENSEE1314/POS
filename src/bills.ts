@@ -5,6 +5,7 @@ import { require_, whoOf } from './auth.ts';
 import { cleanPhone } from './phone.ts';
 import { hasModule, requireModule } from './business.ts';
 import { linePrice, priceFor } from './pricing.ts';
+import { claimCustomer } from './office.ts';
 
 export interface BillTotals {
   subtotal: number;      // active sale lines
@@ -50,6 +51,7 @@ export async function openTable(db: Db, actor: Actor, input: { tableId: number; 
     if (!repId) throw new DomainError('sales rep (repId) is required to open a table', 422);
     await assertRep(t, actor, repId);
     const memberId = phone ? await getOrCreateMember(t, actor.tenantId, phone) : null;
+    if (memberId) await claimCustomer(t, memberId, repId);
     const billId = await t.insert(
       `INSERT INTO bills (store_id, table_id, rep_id, member_id, booking_id, min_spend, table_fee, opened_at)
        VALUES (?,?,?,?,?,?,?,?)`, [actor.storeId, table.id, repId, memberId, bookingId ?? null, table.min_spend, table.table_fee, Date.now()]);
@@ -101,9 +103,9 @@ export async function getOrCreateMember(db: Db, tenantId: number, rawPhone: stri
   return (await db.one('SELECT id FROM members WHERE tenant_id = ? AND phone = ?', [tenantId, phone]))!.id;
 }
 
-async function assertOpenBill(db: Db, actor: Actor, billId: number): Promise<{ member_id: number | null }> {
+async function assertOpenBill(db: Db, actor: Actor, billId: number): Promise<{ member_id: number | null; rep_id: number | null }> {
   // FOR UPDATE: a line must not slip into a bill that a concurrent payment is settling.
-  const bill = await db.one('SELECT status, member_id FROM bills WHERE id = ? AND store_id = ? FOR UPDATE', [billId, actor.storeId]);
+  const bill = await db.one('SELECT status, member_id, rep_id FROM bills WHERE id = ? AND store_id = ? FOR UPDATE', [billId, actor.storeId]);
   if (!bill) throw new DomainError('bill not found', 404);
   if (bill.status !== 'open') throw new DomainError(`bill is ${bill.status}`, 409);
   return bill;
@@ -156,6 +158,7 @@ export async function attachMember(db: Db, actor: Actor, billId: number, phone: 
     if (bill.member_id != null) throw new DomainError('this bill already has a member', 409);
     const memberId = await getOrCreateMember(t, actor.tenantId, phone);
     await t.run('UPDATE bills SET member_id = ? WHERE id = ?', [memberId, billId]);
+    if (bill.rep_id != null) await claimCustomer(t, memberId, Number(bill.rep_id));
     const lines = await t.all(
       `SELECT p.*, l.id AS line_id, l.unit_price AS line_price, l.weight_g FROM bill_lines l JOIN products p ON p.id = l.product_id
        WHERE l.bill_id = ? AND l.status = 'active' AND l.kind = 'sale' AND COALESCE(l.price_note, '') <> 'label'`, [billId]);

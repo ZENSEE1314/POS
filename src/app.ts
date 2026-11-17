@@ -12,6 +12,8 @@ import { businessOf, requireModule, updateBusiness } from './business.ts';
 import { scanCode } from './retail.ts';
 import { registerStockRoutes } from './stock-routes.ts';
 import { registerPeopleRoutes } from './people-routes.ts';
+import { registerOfficeRoutes } from './office-routes.ts';
+import { requestJoin } from './office.ts';
 import { expireStash, lookupStash, retrieveWine, storeWine, transferStash } from './stash.ts';
 import { cancelBooking, confirmBooking, createBooking, ingestDouyinBooking, listBookings, liveVoucherVerifier, mockVoucherVerifier, redeemVoucher, verifyDouyinSignature } from './bookings.ts';
 import type { DouyinBookingEvent } from './bookings.ts';
@@ -180,6 +182,12 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
     return made;
   });
 
+  // Staff sign themselves up with their department's join code; a manager approves them in Office.
+  route('POST', '/api/join', false, async ({ db, body, ip }) => {
+    if (!signupLimiter.allow(`join:${ip}`)) throw new DomainError('too many attempts from this address, try again later', 429);
+    await requestJoin(db, body);
+    return { ok: true };
+  });
   route('POST', '/api/leads', false, async ({ db, body, ip }) => {
     if (!leadLimiter.allow(ip)) throw new DomainError('too many requests from this address, please call us instead', 429);
     const id = await createLead(db, body, ip);
@@ -390,6 +398,7 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
 
   registerStockRoutes(route, { num });
   registerPeopleRoutes(route, { num });
+  registerOfficeRoutes(route, { num });
 
   registerGuestRoutes(route, {
     db, payProviders: providers, baseUrl, isMock, num, sms: buildSms(env), smsPerHour: env.GUEST_SMS_PER_HOUR ? Number(env.GUEST_SMS_PER_HOUR) : undefined,

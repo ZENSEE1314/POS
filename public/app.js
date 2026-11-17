@@ -16,6 +16,7 @@ import { mountHq } from './hq.js';
 import { mountGuestOrders, GUEST_ORDERS_CHANGED } from './guest-orders.js';
 import { mountCounter } from './counter.js';
 import { mountStock } from './stock.js';
+import { mountOffice, openJoinDialog } from './office.js';
 import { hasModule, BUSINESS_TYPES, BUSINESS_CHANGED } from './business.js';
 import { initOffline, syncPillHtml, mountSyncPill, openSyncPanel, syncState, syncNow, forgetEverything, offlineSignedIn } from './offline/index.js';
 import { openPrintDialog } from './print/dialog.js';
@@ -33,6 +34,7 @@ const TABS = [
   { id: 'stash', mount: mountStash, module: 'stash' },
   { id: 'stock', mount: mountStock, perm: 'admin.write', module: 'purchasing' },
   { id: 'members', mount: mountMembers },
+  { id: 'office', mount: mountOffice },
   { id: 'reports', mount: mountReports, perm: 'audit.read' },
   { id: 'admin', mount: mountAdmin, perm: 'admin.write' },
   { id: 'hq', mount: mountHq, perm: 'hq.read' },
@@ -74,6 +76,7 @@ function renderLogin(prefill = {}) {
         <p id="login-error" class="form-error" role="alert" hidden></p>
         <button type="submit" class="btn btn--primary btn--block">${t('login.submit')}</button>
       </form>
+      <p class="login__alt"><button type="button" class="link" data-action="join">${t('join.link')}</button></p>
       ${app.config.signupOpen && html`<p class="login__alt"><button type="button" class="link" data-action="signup">${t('login.createCompany')}</button></p>`}
     </section></main>`);
   document.getElementById(prefill.company ? 'pin' : 'company').focus();
@@ -279,7 +282,7 @@ async function boot() {
   // Modules changed in Admin: rebuild the tabs (a tab that just disappeared falls back to the first one).
   window.addEventListener(BUSINESS_CHANGED, () => { if (app.actor) renderShell(); });
   delegate(document.body, {
-    click: { lang: changeLang, logout, signup: openSignup, syncPanel: openSyncPanel, printSettings: openPrintDialog, ...clockActions },
+    click: { lang: changeLang, logout, signup: openSignup, join: () => openJoinDialog(readStore(localStorage, COMPANY_KEY)), syncPanel: openSyncPanel, printSettings: openPrintDialog, ...clockActions },
     change: { switchStore },
     submit: { login: submitLogin },
   });
