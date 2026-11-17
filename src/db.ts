@@ -488,8 +488,18 @@ async function migrate(db: Db): Promise<void> {
   }
 }
 
+const PG_POOL_MAX = 10;
+/** Fail fast when the pool is exhausted or the database is unreachable, instead of queueing requests forever. */
+const PG_CONNECTION_TIMEOUT_MS = 10_000;
+/** A runaway query is cancelled server-side so it cannot hold row locks (and pool slots) indefinitely. */
+const PG_STATEMENT_TIMEOUT_MS = 30_000;
+
 function pgDriver(url: string): Driver {
-  const pool = new pg.Pool({ connectionString: url, max: 10 });
+  const pool = new pg.Pool({
+    connectionString: url, max: PG_POOL_MAX, connectionTimeoutMillis: PG_CONNECTION_TIMEOUT_MS, statement_timeout: PG_STATEMENT_TIMEOUT_MS,
+  });
+  // Without a listener an error on an idle client (e.g. the database restarted) is an uncaught exception.
+  pool.on('error', (e) => console.error('[nightpos] postgres pool error', e));
   const wrap = (c: { query: (s: string, p?: unknown[]) => Promise<any> }): Conn => ({
     exec: async (sql, params) => {
       const r = await c.query(sql, params);

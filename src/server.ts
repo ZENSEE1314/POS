@@ -9,6 +9,8 @@ assertSafeForProduction(process.env);
 
 const PORT = Number(process.env.PORT ?? 3500);
 const DATABASE_URL = process.env.DATABASE_URL ?? 'pglite:data/pglite';
+/** Time allowed for the crash log to reach the database before the process exits anyway. */
+const CRASH_LOG_GRACE_MS = 2_000;
 const SELF_HEAL_EVERY_MS = Number(process.env.SELF_HEAL_EVERY_MS ?? 60_000);
 const isMock = process.env.PAY_MODE === 'mock';
 
@@ -30,4 +32,14 @@ const shutdown = () => {
 };
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
-process.on('unhandledRejection', (e) => void logEvent(db, 'error', 'unhandledRejection', String(e)));
+process.on('unhandledRejection', (e) => {
+  console.error('[nightpos] unhandledRejection', e);
+  void logEvent(db, 'error', 'unhandledRejection', String(e)).catch(() => undefined);
+});
+// State after an uncaught exception is undefined: log it and exit non-zero so the platform restarts a clean process.
+process.on('uncaughtException', (e) => {
+  console.error('[nightpos] uncaughtException', e);
+  const exit = () => process.exit(1);
+  setTimeout(exit, CRASH_LOG_GRACE_MS).unref();
+  void logEvent(db, 'error', 'uncaughtException', String(e)).catch(() => undefined).finally(exit);
+});
