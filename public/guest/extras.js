@@ -287,29 +287,63 @@ const storeSelect = (stores, id) => (stores.length > 1
 
 // ---------- contact the venue ----------
 
+const LINK = /(https?:\/\/[^\s]+|\/g\/[^\s]+)/g;
+
+/** Reply text with its links as short buttons: app links stay in the app, others (maps) open in a new tab. */
+function linkified(text) {
+  return String(text).split(LINK).map((part, i) => {
+    if (i % 2 === 0) return part;
+    return part.startsWith('/') ? html`<a href="${part}" data-link>${t('sup.openPage')}</a>` : html`<a href="${part}" target="_blank" rel="noopener">${t(part.includes('amap.com') ? 'sup.openMap' : 'sup.openLink')}</a>`;
+  });
+}
+
+function chatHtml(list) {
+  const thread = list.filter((r) => r.kind === 'support').reverse();
+  if (!thread.length) return html`<p class="g-empty">${t('sup.empty')}</p>`;
+  return html`<ol class="g-chat">${thread.map((r) => html`<li class="g-chat__me"><p class="g-bubble g-bubble--me">${r.detail.message}</p>
+      <span class="g-hint">${fmtDateTime(r.createdAt)}${r.storeName ? ` · ${r.storeName}` : ''}</span></li>
+    ${r.reply ? html`<li class="g-chat__them"><span class="g-chat__who">${r.byBot ? t('sup.bot') : t('sup.staff')}</span>
+        <p class="g-bubble g-pre">${linkified(r.reply)}</p>
+        ${r.byBot && html`<button type="button" class="g-link" data-human="${r.id}">${t('sup.human')}</button>`}</li>`
+      : r.status === 'pending' ? html`<li class="g-chat__them"><span class="g-hint">${t('sup.waiting')}</span>
+        <button type="button" class="g-link" data-cancel-request="${r.id}">${t('req.cancel')}</button></li>` : ''}`)}</ol>`;
+}
+
 export async function mountSupport(root, { company, stores }) {
-  const load = async () => {
-    const list = await get(`/api/guest/requests/${enc(company)}`);
-    setHtml(root, html`<div class="g-hero"><h1 class="g-hero__title">${t('sup.title')}</h1></div>
-      <form class="g-card" novalidate data-support>${storeSelect(stores, 'sst')}
-        <div class="g-field"><label for="msg">${t('sup.message')}</label><textarea id="msg" name="message" maxlength="1000" required placeholder="${t('sup.ph')}"></textarea></div>
-        <p class="g-error" role="alert" hidden></p><button type="submit" class="g-btn g-btn--primary g-btn--block">${t('sup.send')}</button></form>
-      <section class="g-card" aria-labelledby="sh"><h2 id="sh" class="g-card__title">${t('sup.history')}</h2>${requestsHtml(list)}</section>`);
-    const form = root.querySelector('[data-support]');
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const err = form.querySelector('.g-error');
-      err.hidden = true;
-      try {
-        await post('/api/guest/requests', { kind: 'support', company, store: form.elements.store?.value ?? stores[0].code, message: form.elements.message.value });
-        toast(t('sup.sent'), 'success');
-        await load();
-      } catch (ex) {
-        err.textContent = ex.message;
-        err.hidden = false;
-      }
-    });
+  let list = [];
+  const send = async (body) => {
+    const r = await post('/api/guest/requests', { kind: 'support', company, ...body });
+    if (!r.autoReply) toast(t('sup.sent'), 'success');
+    await load();
   };
+  const load = async () => {
+    list = await get(`/api/guest/requests/${enc(company)}`);
+    setHtml(root, html`<header class="g-pagehead"><h1 class="g-pagehead__title">${t('sup.title')}</h1><p class="g-hint">${t('sup.intro')}</p></header>
+      <section class="g-card">${chatHtml(list)}</section>
+      <form class="g-card g-composer" novalidate data-support>${storeSelect(stores, 'sst')}
+        <div class="g-field"><label for="msg" class="sr-only">${t('sup.message')}</label><textarea id="msg" name="message" maxlength="1000" required placeholder="${t('sup.ph')}"></textarea></div>
+        <p class="g-error" role="alert" hidden></p><button type="submit" class="g-btn g-btn--primary g-btn--block">${t('sup.send')}</button></form>`);
+    root.querySelector('.g-chat__me:last-of-type')?.scrollIntoView({ block: 'nearest' });
+  };
+  root.addEventListener('submit', async (e) => {
+    const form = e.target.closest('[data-support]');
+    if (!form) return;
+    e.preventDefault();
+    const err = form.querySelector('.g-error');
+    err.hidden = true;
+    try {
+      await send({ store: form.elements.store?.value ?? stores[0].code, message: form.elements.message.value });
+    } catch (ex) {
+      err.textContent = ex.message;
+      err.hidden = false;
+    }
+  });
+  root.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-human]');
+    if (!b) return;
+    const r = list.find((x) => x.id === Number(b.dataset.human));
+    await busy(b, () => send({ store: r.storeCode, message: r.detail.message, human: true }))();
+  });
   onCancelRequest(root, load);
   await withGuest(root, load);
 }

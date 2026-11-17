@@ -92,7 +92,7 @@ test('percent and underscore in a search are taken literally', async () => {
 
 test('results show public details only', async () => {
   const entry = (await search('noodle')).json.results[0];
-  assert.deepEqual(entry, { company: { name: 'Lanzhou Noodle House', code: 'noodle', business: 'restaurant', logo: null }, stores: [{ name: 'Main', code: 'MAIN', city: 'Shanghai', address: '5 Wulumuqi Road' }] });
+  assert.deepEqual(entry, { company: { name: 'Lanzhou Noodle House', code: 'noodle', business: 'restaurant', logo: null }, stores: [{ name: 'Main', code: 'MAIN', city: 'Shanghai', address: '5 Wulumuqi Road', postalCode: '' }] });
 });
 
 test('a manager cannot change location details', async () => {

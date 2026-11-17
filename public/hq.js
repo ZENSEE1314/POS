@@ -38,12 +38,15 @@ export function mountHq(root) {
     fields: [
       { name: 'name', label: t('admin.name'), required: true },
       { name: 'code', label: t('hq.storeCode'), required: true },
+      { name: 'address', label: t('loc.address') },
+      { name: 'city', label: t('loc.city') },
+      { name: 'postalCode', label: t('loc.postal') },
       { name: 'douyinPoiId', label: t('hq.poi') },
       { name: 'copyFrom', label: t('hq.copyFrom'), type: 'select', options: [{ value: NO_STORE, label: t('hq.noCopy') }, ...storeOptions(stores)] },
     ],
     submit: 'common.create',
     onSubmit: async (v) => {
-      await post('/api/hq/stores', { name: v.name, code: v.code, douyinPoiId: v.douyinPoiId || undefined, copyCatalogFrom: v.copyFrom ? Number(v.copyFrom) : undefined });
+      await post('/api/hq/stores', { name: v.name, code: v.code, city: v.city ?? '', address: v.address ?? '', postalCode: v.postalCode ?? '', douyinPoiId: v.douyinPoiId || undefined, copyCatalogFrom: v.copyFrom ? Number(v.copyFrom) : undefined });
       await refresh();
     },
   });

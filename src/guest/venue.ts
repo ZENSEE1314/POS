@@ -71,7 +71,7 @@ const guestProduct = (p: any) => ({
 
 export async function venueInfo(db: Db, company: string) {
   const t = await tenantByCode(db, company);
-  const stores = await db.all('SELECT name, code, city, address FROM stores WHERE tenant_id = ? AND active ORDER BY id', [t.id]);
+  const stores = await db.all('SELECT name, code, city, address, postal_code AS "postalCode" FROM stores WHERE tenant_id = ? AND active ORDER BY id', [t.id]);
   const { type, modules } = await businessOf(db, t.id);
   return {
     company: { name: t.name, code: t.code }, stores, features: (await guestSettings(db, t.id)).features,

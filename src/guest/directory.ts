@@ -5,7 +5,7 @@ const MAX_RESULTS = 50;
 const MAX_QUERY = 60;
 const MAX_CITIES = 30;
 
-export interface DirectoryStore { name: string; code: string; city: string; address: string }
+export interface DirectoryStore { name: string; code: string; city: string; address: string; postalCode: string }
 export interface DirectoryEntry { company: { name: string; code: string; business: string; logo: string | null }; stores: DirectoryStore[] }
 
 const LOGO_VERSION = "(SELECT i.updated_at FROM tenant_images i WHERE i.tenant_id = t.id AND i.kind = 'logo') AS logo_v";
@@ -22,12 +22,12 @@ function groupByCompany(rows: any[]): DirectoryEntry[] {
       e = { company: { name: r.company_name, code: r.company_code, business: r.business_type, logo }, stores: [] };
       out.set(r.company_code, e);
     }
-    e.stores.push({ name: r.store_name, code: r.store_code, city: r.city, address: r.address });
+    e.stores.push({ name: r.store_name, code: r.store_code, city: r.city, address: r.address, postalCode: r.postal_code });
   }
   return [...out.values()];
 }
 
-const DIRECTORY_SQL = `SELECT t.name AS company_name, t.code AS company_code, t.business_type, s.name AS store_name, s.code AS store_code, s.city, s.address,
+const DIRECTORY_SQL = `SELECT t.name AS company_name, t.code AS company_code, t.business_type, s.name AS store_name, s.code AS store_code, s.city, s.address, s.postal_code,
     ${LOGO_VERSION}
   FROM tenants t JOIN stores s ON s.tenant_id = t.id WHERE t.active AND t.listed AND s.active`;
 
@@ -66,7 +66,7 @@ export async function searchDirectory(db: Db, rawQuery: unknown, rawCity: unknow
  */
 export async function myPlaces(db: Db, customerId: number): Promise<DirectoryEntry[]> {
   const rows = await db.all(
-    `SELECT t.name AS company_name, t.code AS company_code, t.business_type, s.name AS store_name, s.code AS store_code, s.city, s.address,
+    `SELECT t.name AS company_name, t.code AS company_code, t.business_type, s.name AS store_name, s.code AS store_code, s.city, s.address, s.postal_code,
        ${LOGO_VERSION}
      FROM tenants t JOIN stores s ON s.tenant_id = t.id
      JOIN (SELECT tenant_id, MAX(ts) AS last FROM (

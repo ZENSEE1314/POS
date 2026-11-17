@@ -9,12 +9,13 @@ import { showTableQr, showVenueQr } from './table-qr.js';
 import { guestAdminSections } from './guest-admin.js';
 import { businessAdminSections, visibleSectionIds } from './business-admin.js';
 import { broadcastSection } from './broadcast-admin.js';
+import { botSection } from './bot-admin.js';
 import { hasModule, isWeighed, fmtStock, fmtKg } from './business.js';
 
 const TABLE_KINDS = ['bar', 'booth', 'room'];
 const RULE_ROLES = ['sales', 'waiter'];
 const BPS_PER_PERCENT = 100;
-const SECTION_IDS = ['business', 'tables', 'products', 'promotions', 'rules', 'staff', 'broadcasts', 'printers', 'guestApp', 'appDesign', 'locations', 'guestPasswords', 'events', 'rewards', 'prizes'];
+const SECTION_IDS = ['business', 'tables', 'products', 'promotions', 'rules', 'staff', 'broadcasts', 'printers', 'guestApp', 'bot', 'appDesign', 'locations', 'guestPasswords', 'events', 'rewards', 'prizes'];
 const STATIONS = ['', 'bar', 'kitchen'];
 const UNITS = ['each', 'kg'];
 const SECTION_LABELS = { business: 'biz.section', promotions: 'promo.section' };
@@ -88,6 +89,7 @@ export function mountAdmin(root) {
     ...guestAdminSections(() => reload()),
     ...businessAdminSections(() => reload()),
     ...broadcastSection(() => reload()),
+    ...botSection(() => reload()),
   };
 
   const reload = async () => {

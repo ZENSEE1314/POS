@@ -29,6 +29,8 @@ import { listEvents, saveEvent, upcomingEvents } from './events.ts';
 import { guestSettings, updateGuestSettings } from './settings.ts';
 import { myPlaces, searchDirectory } from './directory.ts';
 import { imageOf, removeImage, saveImage, staffTheme, updateTheme } from './theme.ts';
+import { dismissQuestion, listFaqs, listQuestions, saveFaq } from './bot.ts';
+import { getWechatOa, saveWechatOa } from './wechat-oa.ts';
 import { FileBody } from '../responses.ts';
 
 const HOUR_MS = 60 * 60_000;
@@ -300,6 +302,19 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
   route('GET', '/api/spin-prizes', true, ({ db, actor }) => listPrizes(db, actor));
   route('POST', '/api/spin-prizes', true, ({ db, actor, body }) => savePrize(db, actor, null, body));
   route('PATCH', '/api/spin-prizes/:id', true, ({ db, actor, params, body }) => savePrize(db, actor, num(params[0]), body));
+  route('GET', '/api/bot/faqs', true, ({ db, actor }) => listFaqs(db, actor));
+  route('POST', '/api/bot/faqs', true, ({ db, actor, body }) => saveFaq(db, actor, null, body));
+  route('PATCH', '/api/bot/faqs/:id', true, ({ db, actor, params, body }) => saveFaq(db, actor, num(params[0]), body));
+  route('GET', '/api/bot/questions', true, ({ db, actor }) => listQuestions(db, actor));
+  route('POST', '/api/bot/questions/:id/dismiss', true, async ({ db, actor, params }) => {
+    await dismissQuestion(db, actor, num(params[0]));
+    return { ok: true };
+  });
+  route('GET', '/api/bot/wechat', true, ({ db, actor }) => getWechatOa(db, actor, baseUrl));
+  route('PUT', '/api/bot/wechat', true, async ({ db, actor, body }) => {
+    await saveWechatOa(db, actor, body);
+    return { ok: true };
+  });
   route('GET', '/api/venue-events', true, ({ db, actor }) => listEvents(db, actor));
   route('POST', '/api/venue-events', true, ({ db, actor, body }) => saveEvent(db, actor, null, body));
   route('PATCH', '/api/venue-events/:id', true, ({ db, actor, params, body }) => saveEvent(db, actor, num(params[0]), body));

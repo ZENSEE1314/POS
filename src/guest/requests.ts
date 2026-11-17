@@ -6,6 +6,7 @@ import type { Feature } from './settings.ts';
 import { requireFeature } from './settings.ts';
 import type { StoreRef } from './venue.ts';
 import { int, storeByCode, tableByToken, tenantByCode, text } from './venue.ts';
+import { botAnswer, botEnabled, recordQuestion } from './bot.ts';
 
 const KINDS = ['service', 'song', 'bottle', 'support', 'pet'] as const;
 type Kind = typeof KINDS[number];
@@ -69,7 +70,7 @@ async function detailFor(db: Db, kind: Kind, customerId: number, store: StoreRef
  * A guest asks the staff for something: at a table (service, bottle), at a location (support, pet care), or either (a song
  * request from the table QR, or from the app's song page before the guest has sat down).
  */
-export async function createRequest(db: Db, customerId: number, b: Record<string, unknown>): Promise<{ requestId: number }> {
+export async function createRequest(db: Db, customerId: number, b: Record<string, unknown>): Promise<{ requestId: number; autoReply: string | null }> {
   const kind = oneOf(b.kind, 'kind', [...KINDS]) as Kind;
   let store: StoreRef;
   let tableId: number | null = null;
@@ -82,7 +83,7 @@ export async function createRequest(db: Db, customerId: number, b: Record<string
   }
   await requireFeature(db, store.tenantId, FEATURE_OF[kind]);
   const detail = await detailFor(db, kind, customerId, store, b);
-  return db.tx(async (t) => {
+  const requestId = await db.tx(async (t) => {
     // Serialise one guest's requests so the limits below cannot be raced.
     await t.one('SELECT id FROM customers WHERE id = ? FOR UPDATE', [customerId]);
     const c = await t.one(
@@ -93,12 +94,29 @@ export async function createRequest(db: Db, customerId: number, b: Record<string
     const id = await t.insert('INSERT INTO guest_requests (store_id, table_id, customer_id, kind, detail, created_at) VALUES (?,?,?,?,?,?)',
       [store.storeId, tableId, customerId, kind, JSON.stringify(detail), Date.now()]);
     await audit(t, { tenantId: store.tenantId, storeId: store.storeId }, `guest.request.${kind}`, 'guest_request', id, { customerId, tableId });
-    return { requestId: id };
+    return id;
   });
+  const autoReply = kind === 'support' && b.human !== true ? await autoAnswer(db, store, requestId, String(detail.message)) : null;
+  return { requestId, autoReply };
+}
+
+/**
+ * Lets the auto-reply answer a message to the venue. An answered message is closed with the bot's reply; one it cannot
+ * answer stays waiting for staff and is kept as an open question for Admin > Auto-reply.
+ */
+async function autoAnswer(db: Db, store: StoreRef, requestId: number, message: string): Promise<string | null> {
+  if (!await botEnabled(db, store.tenantId)) return null;
+  const answer = await botAnswer(db, { id: store.tenantId, name: store.companyName, code: store.companyCode }, message, '');
+  if (!answer) {
+    await recordQuestion(db, store.tenantId, 'app', message);
+    return null;
+  }
+  await db.run("UPDATE guest_requests SET status = 'done', reply = ?, decided_at = ?, by_bot = TRUE WHERE id = ? AND status = 'pending'", [answer, Date.now(), requestId]);
+  return answer;
 }
 
 const view = (r: any) => ({
-  id: r.id, kind: r.kind, status: r.status, detail: JSON.parse(r.detail), reply: r.reply, createdAt: r.created_at, decidedAt: r.decided_at,
+  id: r.id, kind: r.kind, status: r.status, detail: JSON.parse(r.detail), reply: r.reply, byBot: Boolean(r.by_bot), createdAt: r.created_at, decidedAt: r.decided_at,
   tableName: r.table_name ?? null, storeName: r.store_name, storeCode: r.store_code,
 });
 

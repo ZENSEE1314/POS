@@ -9,7 +9,7 @@ const MAX_TEXT_LENGTH = 200;
 
 export function listStores(db: Db, actor: Actor) {
   require_(actor, 'hq.read');
-  return db.all('SELECT id, name, code, douyin_poi_id AS "douyinPoiId", active, city, address FROM stores WHERE tenant_id = ? ORDER BY id', [actor.tenantId]);
+  return db.all('SELECT id, name, code, douyin_poi_id AS "douyinPoiId", active, city, address, postal_code AS "postalCode" FROM stores WHERE tenant_id = ? ORDER BY id', [actor.tenantId]);
 }
 
 const MAX_CITY = 40;
@@ -19,17 +19,33 @@ const placeText = (v: unknown, name: string, max: number): string => {
   return v.trim();
 };
 
-/** City and street address, shown to guests in the customer app search. */
-export async function updateStoreLocation(db: Db, actor: Actor, storeId: number, input: { city?: unknown; address?: unknown }): Promise<void> {
-  require_(actor, 'hq.write');
-  const city = placeText(input.city, 'city', MAX_CITY);
-  const address = placeText(input.address, 'address', MAX_TEXT_LENGTH);
-  const found = await db.one('UPDATE stores SET city = ?, address = ? WHERE id = ? AND tenant_id = ? RETURNING id', [city, address, storeId, actor.tenantId]);
-  if (!found) throw new DomainError('store not found', 404);
-  await audit(db, whoOf(actor), 'store.location', 'store', storeId, { city, address });
+// Letters, digits, spaces and hyphens: China uses 6 digits, other countries differ.
+const POSTAL_CODE = /^[A-Za-z0-9][A-Za-z0-9 -]{1,8}[A-Za-z0-9]$/;
+
+export interface Place { city: string; address: string; postalCode: string }
+
+/** City, street address and postal code of a location; `required` (merchant sign-up) insists on all three. */
+export function placeOf(input: { city?: unknown; address?: unknown; postalCode?: unknown }, required = false): Place {
+  const place = {
+    city: placeText(input.city, 'city', MAX_CITY),
+    address: placeText(input.address, 'address', MAX_TEXT_LENGTH),
+    postalCode: placeText(input.postalCode, 'postal code', MAX_CITY),
+  };
+  if (required && (!place.city || !place.address || !place.postalCode)) throw new DomainError('city, street address and postal code are required', 422);
+  if (place.postalCode && !POSTAL_CODE.test(place.postalCode)) throw new DomainError('postal code: 3-10 letters or digits', 422);
+  return place;
 }
 
-export async function createStore(db: Db, actor: Actor, input: { name: string; code: string; douyinPoiId?: string; copyCatalogFrom?: number; city?: unknown; address?: unknown }): Promise<number> {
+/** City, street address and postal code, shown to guests in the customer app (search, home page and map link). */
+export async function updateStoreLocation(db: Db, actor: Actor, storeId: number, input: { city?: unknown; address?: unknown; postalCode?: unknown }): Promise<void> {
+  require_(actor, 'hq.write');
+  const { city, address, postalCode } = placeOf(input);
+  const found = await db.one('UPDATE stores SET city = ?, address = ?, postal_code = ? WHERE id = ? AND tenant_id = ? RETURNING id', [city, address, postalCode, storeId, actor.tenantId]);
+  if (!found) throw new DomainError('store not found', 404);
+  await audit(db, whoOf(actor), 'store.location', 'store', storeId, { city, address, postalCode });
+}
+
+export async function createStore(db: Db, actor: Actor, input: { name: string; code: string; douyinPoiId?: string; copyCatalogFrom?: number; city?: unknown; address?: unknown; postalCode?: unknown }): Promise<number> {
   require_(actor, 'hq.write');
   if (typeof input.name !== 'string' || typeof input.code !== 'string' || !input.name.trim() || !input.code.trim()) throw new DomainError('name and code required', 422);
   // An empty poi means "no Douyin mapping": storing '' would make the second such store collide on the unique index.
@@ -40,8 +56,9 @@ export async function createStore(db: Db, actor: Actor, input: { name: string; c
     const exists = await t.one('SELECT 1 AS x FROM stores WHERE tenant_id = ? AND code = ?', [actor.tenantId, input.code]);
     if (exists) throw new DomainError('store code already used', 409);
     if (poi && (await t.one('SELECT 1 AS x FROM stores WHERE douyin_poi_id = ?', [poi]))) throw new DomainError('Douyin poi is already mapped to another store', 409);
-    const id = await t.insert('INSERT INTO stores (tenant_id, name, code, douyin_poi_id, created_at, city, address) VALUES (?,?,?,?,?,?,?)',
-      [actor.tenantId, input.name, input.code, poi, Date.now(), placeText(input.city, 'city', MAX_CITY), placeText(input.address, 'address', MAX_TEXT_LENGTH)]);
+    const place = placeOf(input);
+    const id = await t.insert('INSERT INTO stores (tenant_id, name, code, douyin_poi_id, created_at, city, address, postal_code) VALUES (?,?,?,?,?,?,?,?)',
+      [actor.tenantId, input.name, input.code, poi, Date.now(), place.city, place.address, place.postalCode]);
     await audit(t, { tenantId: actor.tenantId, storeId: id, actorId: actor.id }, 'store.create', 'store', id, input);
     if (input.copyCatalogFrom) await copyCatalog(t, actor, Number(input.copyCatalogFrom), [id]);
     return id;

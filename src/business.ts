@@ -40,13 +40,13 @@ export const MODULE_PRESETS: Record<BusinessType, Modules> = {
 
 /** Customer app features (see guest/settings.ts) that suit each kind of business. */
 export const GUEST_FEATURE_PRESETS: Record<BusinessType, Feature[]> = {
-  bar: ['service', 'song', 'bottle', 'gift', 'loyalty', 'referral', 'spin', 'events', 'games', 'support'],
-  restaurant: ['service', 'gift', 'loyalty', 'referral', 'spin', 'events', 'support'],
-  cafe: ['service', 'loyalty', 'referral', 'spin', 'events', 'games', 'support'],
-  retail: ['loyalty', 'referral', 'spin', 'events', 'support'],
-  pet: ['service', 'loyalty', 'referral', 'spin', 'events', 'support', 'pets'],
-  salon: ['loyalty', 'referral', 'spin', 'events', 'support'],
-  other: ['service', 'loyalty', 'referral', 'events', 'support'],
+  bar: ['service', 'song', 'bottle', 'gift', 'loyalty', 'referral', 'spin', 'events', 'games', 'support', 'bot'],
+  restaurant: ['service', 'gift', 'loyalty', 'referral', 'spin', 'events', 'support', 'bot'],
+  cafe: ['service', 'loyalty', 'referral', 'spin', 'events', 'games', 'support', 'bot'],
+  retail: ['loyalty', 'referral', 'spin', 'events', 'support', 'bot'],
+  pet: ['service', 'loyalty', 'referral', 'spin', 'events', 'support', 'bot', 'pets'],
+  salon: ['loyalty', 'referral', 'spin', 'events', 'support', 'bot'],
+  other: ['service', 'loyalty', 'referral', 'events', 'support', 'bot'],
 };
 
 export interface Business { type: BusinessType; modules: Modules; scaleMode: ScaleMode }

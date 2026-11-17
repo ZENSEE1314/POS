@@ -117,7 +117,6 @@ const setHeader = (h) => {
 
 const SEARCH_DELAY_MS = 250;
 
-const placeLine = (s) => [s.city, s.address].filter(Boolean).join(' · ');
 const placeCard = (e) => {
   const cities = [...new Set(e.stores.map((s) => s.city).filter(Boolean))];
   const kindAndCity = [tOr(`biz.${e.company.business}`, ''), ...cities].filter(Boolean).join(' · ');
@@ -204,8 +203,7 @@ function newsHtml(v, storeName = null) {
 /** The dashboard at one location of a company (the one the guest chose last, unless the address names another). */
 function home(root, v, store) {
   rememberStore(v, store);
-  const where = placeLine(store);
-  const cover = heroHtml(v, t('venue.welcome'), v.theme?.headline || v.company.name, where ? html`<p class="g-cover__where">${icon('pin')}<span>${where}</span></p>` : '');
+  const cover = heroHtml(v, t('venue.welcome'), v.theme?.headline || v.company.name);
   return mountDashboard(root, v, { store, navigate, newsHtml: newsHtml(v, v.stores.length > 1 ? store.name : null), coverHtml: cover });
 }
 

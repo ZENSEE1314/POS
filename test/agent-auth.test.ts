@@ -640,6 +640,8 @@ test('platform: list companies has counts and no secrets', async () => {
 });
 
 const GOOD_COMPANY = { name: 'Valid Co', code: 'valid-co', storeName: 'Main', ownerName: 'Boss', ownerUsername: 'boss', ownerPin: 'secret1' };
+/** Self sign-up also needs the first location's full address. */
+const SIGNUP_COMPANY = { ...GOOD_COMPANY, address: '1 Test Road', city: 'Shanghai', postalCode: '200000' };
 
 test('createCompany rejects bad codes, usernames, pins and missing names with 422 (never 500)', async () => {
   const bad: Array<[string, Record<string, unknown>]> = [
@@ -710,7 +712,7 @@ test('signup is disabled unless SIGNUP_OPEN is exactly "1"', async () => {
   for (const flag of [undefined, '0', 'true', '']) {
     const app = await startApp({ PAY_MODE: 'mock', ...(flag === undefined ? {} : { SIGNUP_OPEN: flag }) } as NodeJS.ProcessEnv);
     assert.equal((await app.call('GET', '/api/config')).json.signupOpen, false, `flag ${flag}`);
-    const r = await app.call('POST', '/api/signup', { ...GOOD_COMPANY, code: `off-${String(flag)}` });
+    const r = await app.call('POST', '/api/signup', { ...SIGNUP_COMPANY, code: `off-${String(flag)}` });
     assert.equal(r.status, 403, `flag ${flag}`);
   }
   assert.equal((await db.one("SELECT COUNT(*) AS n FROM tenants WHERE code LIKE 'off-%'"))!.n, 0);
@@ -718,20 +720,20 @@ test('signup is disabled unless SIGNUP_OPEN is exactly "1"', async () => {
 
 test('signup when open creates a working company; validation and duplicates behave like the platform route', async () => {
   assert.equal((await call('GET', '/api/config')).json.signupOpen, true);
-  const ok = await call('POST', '/api/signup', { ...GOOD_COMPANY, code: 'signup-co' }, undefined, { 'x-forwarded-for': freshIp() });
+  const ok = await call('POST', '/api/signup', { ...SIGNUP_COMPANY, code: 'signup-co' }, undefined, { 'x-forwarded-for': freshIp() });
   assert.equal(ok.status, 200, ok.text);
   assert.equal((await login('signup-co', 'boss', 'secret1')).status, 200);
-  assert.equal((await call('POST', '/api/signup', { ...GOOD_COMPANY, code: 'SIGNUP-CO' }, undefined, { 'x-forwarded-for': freshIp() })).status, 409);
-  assert.equal((await call('POST', '/api/signup', { ...GOOD_COMPANY, code: 'x' }, undefined, { 'x-forwarded-for': freshIp() })).status, 422);
+  assert.equal((await call('POST', '/api/signup', { ...SIGNUP_COMPANY, code: 'SIGNUP-CO' }, undefined, { 'x-forwarded-for': freshIp() })).status, 409);
+  assert.equal((await call('POST', '/api/signup', { ...SIGNUP_COMPANY, code: 'x' }, undefined, { 'x-forwarded-for': freshIp() })).status, 422);
 });
 
 test('signup is rate limited to 5 per ip per hour', async () => {
   const app = await startApp(ENV);
   const ip = { 'x-forwarded-for': '203.0.113.140' };
   const statuses: number[] = [];
-  for (let i = 0; i < 7; i++) statuses.push((await app.call('POST', '/api/signup', { ...GOOD_COMPANY, code: `rl-co-${i}`, ownerUsername: `rl${i}` }, undefined, ip)).status);
+  for (let i = 0; i < 7; i++) statuses.push((await app.call('POST', '/api/signup', { ...SIGNUP_COMPANY, code: `rl-co-${i}`, ownerUsername: `rl${i}` }, undefined, ip)).status);
   assert.deepEqual(statuses, [200, 200, 200, 200, 200, 429, 429]);
-  assert.equal((await app.call('POST', '/api/signup', { ...GOOD_COMPANY, code: 'rl-co-other' }, undefined, { 'x-forwarded-for': '203.0.113.141' })).status, 200);
+  assert.equal((await app.call('POST', '/api/signup', { ...SIGNUP_COMPANY, code: 'rl-co-other' }, undefined, { 'x-forwarded-for': '203.0.113.141' })).status, 200);
 });
 
 test('a signed-up owner cannot see seeded company data and platform routes stay closed to them', async () => {

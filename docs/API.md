@@ -11,7 +11,7 @@ Roles: `host`, `waiter`, `cashier`, `manager`, `finance`, `owner`. `owner` and `
 | `GET /healthz` | `{ok, mode}` |
 | `GET /api/config` | `{mock, signupOpen, payments:{wechat,alipay}}` (which online methods are configured) |
 | `POST /api/login` | `{company, username, pin, storeId?}` -> `{token, actor:{id,name,role,tenantId,storeId}}` |
-| `POST /api/signup` | `{name, code, storeName, ownerName, ownerUsername, ownerPin}` (only if `signupOpen`) |
+| `POST /api/signup` | `{name, code, storeName, ownerName, ownerUsername, ownerPin, address, city, postalCode}` (only if `signupOpen`; the address fields are required) |
 
 ## Session
 `POST /api/logout` · `GET /api/me` -> `{actor, store, company, business}` · `POST /api/switch-store {storeId}` (owner/finance)
@@ -72,6 +72,13 @@ Webhook `POST /webhooks/douyin` (HMAC `x-douyin-signature`), `POST /webhooks/wec
 - `GET /api/reports/daily?from&to` (manager, finance, owner) · `GET /api/payroll?from&to[&all=1]` (finance, owner) · `GET /api/audit[?all=1]`
 - `GET /api/activity?from&to&staff&action&before&all=1` (manager, finance, owner): audit trail with staff and store names, 100 per page (`next` = pass as `before`); `action` is a prefix (`order.` matches voids and gifts). Pay changes (`staff.pay`) show no detail unless the reader is finance or owner.
 
+## Auto-reply (manager, owner)
+- `GET /api/bot/faqs` · `POST /api/bot/faqs {question?, questionEn?, answer?, answerEn?, active?, fromQuestion?}` · `PATCH /api/bot/faqs/:id {…}` (a question may hold several phrasings, one per line; `fromQuestion` closes that open question)
+- `GET /api/bot/questions` (questions the bot could not answer, open only) · `POST /api/bot/questions/:id/dismiss`
+- `GET /api/bot/wechat` → `{url, appId, hasToken}` (the token is never returned) · `PUT /api/bot/wechat {appId?, token}` (empty token unlinks)
+- `GET|POST /webhooks/wechat-oa/:company` (called by WeChat, signed with the company's token): GET echoes `echostr`, POST answers text messages and follow events with a passive XML reply
+- Guest side: `POST /api/guest/requests {kind: 'support', …, human?: true}` returns `autoReply` (the bot's answer, or null when staff will answer); answered messages come back with `byBot: true`
+
 ## Attendance, salary and broadcasts
 - `GET /api/attendance/me` · `POST /api/attendance/clock-in` · `POST /api/attendance/clock-out` (every staff member, for themselves; one open shift each)
 - `GET /api/attendance?from&to[&all=1]` (manager, finance, owner) · `POST /api/attendance {employeeId, clockIn, clockOut, note?}` · `PATCH /api/attendance/:id {clockIn, clockOut, note?}` (manager, owner; own store unless owner; shifts up to 24 h, not in the future; old times kept in the audit log)
@@ -80,7 +87,7 @@ Webhook `POST /webhooks/douyin` (HMAC `x-douyin-signature`), `POST /webhooks/wec
 
 ## Staff and head office
 - `GET /api/staff` (manager, owner) · `PATCH /api/staff/:id {active?, pin?, name?, role?}` (owner)
-- `GET /api/hq/stores` (owner, finance) · `POST /api/hq/stores {name, code, douyinPoiId?, copyCatalogFrom?}` (owner) · `POST /api/hq/staff {name, username, role, pin, storeId?}` (owner) · `POST /api/hq/catalog/copy {fromStoreId, toStoreIds}` (owner) · `GET /api/hq/summary?from&to` (owner, finance)
+- `GET /api/hq/stores` (owner, finance) · `POST /api/hq/stores {name, code, city?, address?, postalCode?, douyinPoiId?, copyCatalogFrom?}` (owner) · `POST /api/hq/staff {name, username, role, pin, storeId?}` (owner) · `POST /api/hq/catalog/copy {fromStoreId, toStoreIds}` (owner) · `GET /api/hq/summary?from&to` (owner, finance)
 
 ## Platform operator (header `x-admin-key: $PLATFORM_ADMIN_KEY`, disabled if unset)
 `GET/POST /platform/companies` · `GET /platform/ops?level=&limit=` (warn/error events) · `GET /platform/metrics` · `POST /platform/selfheal` (run invariant checks + safe repairs)
@@ -90,7 +97,7 @@ Guest tokens are separate from staff tokens (`Authorization: Bearer <guest token
 - `GET /api/guest/venue/:company` also returns `business`, `orderAhead`, `bookings`, `tables`; menu products carry `byWeight`.
 - Order ahead: `POST /api/guest/shop-orders {company, store, mode: pickup|delivery, items, note?, address? (delivery), pickupAt?}` (verified phone; delivery module; no items sold by weight) · `POST /api/guest/orders/:id/pay {method, amount?}` once accepted. Orders carry `mode, address, pickupAt, fulfilStatus, bill: {id, status, due}`.
 - Staff: `POST /api/guest-orders/:id/fulfil {step}`: pickup `ready`, `done`; delivery `out`, `done`.
-- Directory: `GET /api/guest/directory?q=&city=` -> `{results: [{company:{name,code,business}, stores:[{name,code,city,address}]}] (max 50), cities}`; only active companies with `listed` on; `q` matches company name/code, location name, city or address. `GET /api/guest/me/places` (signed in) -> same entries for businesses the guest has ordered, booked or earned points with, newest first. Owner: `PATCH /api/hq/stores/:id/location {city, address}` (hq.write); `listed` is part of `/api/guest-settings`.
+- Directory: `GET /api/guest/directory?q=&city=` -> `{results: [{company:{name,code,business}, stores:[{name,code,city,address,postalCode}]}] (max 50), cities}`; only active companies with `listed` on; `q` matches company name/code, location name, city or address. `GET /api/guest/me/places` (signed in) -> same entries for businesses the guest has ordered, booked or earned points with, newest first. Owner: `PATCH /api/hq/stores/:id/location {city, address, postalCode}` (hq.write); `listed` is part of `/api/guest-settings`.
 - App design: venue and table info carry `theme: {preset, accent, headline, tagline, layout, logo, cover}` (logo/cover are URLs or null). Staff (admin.write; audited): `GET/PATCH /api/guest-theme {preset: night|midnight|noir|daylight|blush, accent: '#rrggbb'|'', headline (60), tagline (140), layout: list|grid}` · `PUT /api/guest-theme/images/:kind {dataUrl}` (kind logo|cover; JPEG/PNG/WebP checked by file signature, max 180 KB) · `DELETE /api/guest-theme/images/:kind`. Public: `GET /api/guest/images/:company/:kind` (bytes, cached a day; URL changes on upload).
 - Public: `GET /api/guest/config` -> `{mock, login:{wechat,alipay,douyin,phone,password}, payments:{wechat,alipay}}` · `GET /api/guest/venue/:company` · `GET /api/guest/venue/:company/:store/menu` · `GET /api/guest/table/:qrToken`
 - Provider sign-in: `GET /api/guest/auth/:provider/start?return=/g/...` (302 to the provider) -> provider -> `GET /api/guest/auth/:provider/callback` (302 to `return#login=<one-time code>` or `#loginError=`) -> `POST /api/guest/session {code}` -> `{token, customer}`. State and code are single-use; `return` must be a `/g/` path.

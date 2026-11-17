@@ -8,7 +8,7 @@ WeChat Pay, Alipay and Douyin (抖音来客) integrations; Postgres; self-monito
 ```bash
 npm install
 node scripts/dev.ts          # http://localhost:3500: simulated payments + demo company (dev only)
-npm test                     # 673 tests on embedded Postgres (PGlite); on a low-memory machine use --test-concurrency=1
+npm test                     # 700 tests on embedded Postgres (PGlite); on a low-memory machine use --test-concurrency=1
 node scripts/test-pg.ts      # same suite through the production `pg` driver over the Postgres wire protocol
 node scripts/simulate.ts http://localhost:3500 dev-admin-key 4 25   # multi-company load simulation + books audit
 ```
@@ -97,7 +97,7 @@ A mobile web page for guests, at `/g/<company code>` (works in WeChat, Alipay, D
 | `/g/<company>/events` | upcoming events at every location; *Book for this event* opens the booking form with the event attached |
 | `/g/<company>/games` | the prize wheel (when on) and party games on one phone: dice cup, truth or dare, random "who's next" (nothing is sent or bet) |
 | `/g/<company>/pets` | the guest's pets and pet care requests (grooming, bath, day care, boarding, visit). Off by default |
-| `/g/<company>/support` | message the venue (lost items, questions) and read the reply |
+| `/g/<company>/support` | chat with the venue: the auto-reply answers common questions at once, staff answer the rest ("Ask our staff" skips the bot) |
 
 - **Sign-in**: WeChat, Alipay, Douyin, phone + SMS code, or phone + password (register in the app, no SMS or outside account needed; always on). A password account's phone is not verified, so it does not unlock the wallet or stash until the guest verifies it by SMS; it is used as the contact number for bookings and pickup/delivery orders. Forgot password: a manager gives a one-time reset code from Admin > Guest passwords (only for accounts without a verified phone), or the guest uses an SMS code once SMS is set up. One guest account works at every company on the platform. A **verified phone** is what links the guest to a company's member wallet and stash (members are keyed by phone), so wallet, stash and booking need it; if the phone already belongs to another guest account (they signed in another way before), the two accounts are merged.
 - **Ordering**: guest orders wait in the staff **Guest orders** tab (badge with the waiting count). *Accept* puts the items on the table's open bill through the normal path (current price, stock, waiter commission to the accepting staff, bar/kitchen tickets print); a free table is opened first and needs a sales rep. *Reject* needs a reason the guest sees.
@@ -120,6 +120,14 @@ A mobile web page for guests, at `/g/<company code>` (works in WeChat, Alipay, D
 | Phone (SMS) | `ALIYUN_SMS_ACCESS_KEY_ID`, `ALIYUN_SMS_ACCESS_KEY_SECRET`, `ALIYUN_SMS_SIGN_NAME`, `ALIYUN_SMS_TEMPLATE_CODE` | Aliyun SMS with an approved signature and a verification-code template using `${code}` |
 
 Callbacks go to `PUBLIC_BASE_URL/api/guest/auth/<wechat|alipay|douyin>/callback`. As with payments, these integrations follow the providers' documented APIs but have only been run in mock mode.
+
+## Auto-reply (app and WeChat)
+Works like the Reborn WhatsApp bot, with no AI service to pay for: it answers from the company's own FAQ (Admin > Auto-reply; several phrasings per question, Chinese and English, similar wording still matches), then common requests by keyword (address with postal code and an Amap link, upcoming events, booking, menu, song requests, points and wallet). Anything else waits for staff in Guest requests and is listed under *Open questions*, where one click turns the answer into a new FAQ. Switch it off per company in Admin > Customer app (feature *Auto-reply*).
+
+WeChat Official Account: in Admin > Auto-reply, *Link WeChat* with a Token, then in the WeChat console (设置与开发 > 基本配置 > 服务器配置) set the server URL to `PUBLIC_BASE_URL/webhooks/wechat-oa/<company>`, the same Token, plaintext mode. Followers get the same answers as passive replies, a welcome message when they follow, and a "passed to staff" message otherwise (staff then reply in the WeChat console). Needs a verified Official Account and an ICP-filed domain for the server URL; only tested with simulated WeChat calls.
+
+## Merchant sign-up
+Self sign-up (`SIGNUP_OPEN=1`) asks for the first location's street address, city and postal code; they are required, so every new business appears in the customer app search with its address and a map button. Owners can change them, and add them for other locations, in Admin > Locations in the app.
 
 ## Create the first company
 ```bash

@@ -44,7 +44,7 @@ const designPreview = (theme, companyName) => html`<div class="design-preview" s
     ${['ds.sampleMenu', 'ds.sampleBook', 'ds.sampleRewards', 'ds.sampleGames'].map((k) => html`<div class="design-preview__tile"><i></i><span>${t(k)}</span></div>`)}</div>
   <div class="design-preview__btn">${t('ds.sampleButton')}</div></div>`;
 
-const FEATURES = ['service', 'song', 'bottle', 'gift', 'loyalty', 'referral', 'spin', 'events', 'games', 'support', 'pets'];
+const FEATURES = ['service', 'song', 'bottle', 'gift', 'loyalty', 'referral', 'spin', 'events', 'games', 'support', 'bot', 'pets'];
 const PRIZE_KINDS = ['none', 'points', 'voucher'];
 const PERCENT = 100;
 
@@ -167,15 +167,16 @@ export function guestAdminSections(reload) {
       add: null,
       view: (rows) => html`<p class="muted">${t('loc.intro')}</p>${dataTable({ caption: t('admin.locations'), empty: t('common.noData'), rows, cols: [
         { label: t('admin.name'), cell: (x) => x.name }, { label: t('loc.city'), cell: (x) => x.city || '-' },
-        { label: t('loc.address'), cell: (x) => x.address || '-' }, { label: t('common.actions'), cell: (x) => editBtn(x.id) }] })}`,
+        { label: t('loc.address'), cell: (x) => x.address || '-' }, { label: t('loc.postal'), cell: (x) => x.postalCode || '-' }, { label: t('common.actions'), cell: (x) => editBtn(x.id) }] })}`,
       dialog: (x) => formDialog({
         title: x.name,
         fields: [
           { name: 'city', label: t('loc.city'), value: x.city },
           { name: 'address', label: t('loc.address'), value: x.address },
+          { name: 'postalCode', label: t('loc.postal'), value: x.postalCode },
         ],
         onSubmit: async (v) => {
-          await patch(`/api/hq/stores/${x.id}/location`, { city: v.city ?? '', address: v.address ?? '' });
+          await patch(`/api/hq/stores/${x.id}/location`, { city: v.city ?? '', address: v.address ?? '', postalCode: v.postalCode ?? '' });
           await reload();
         },
       }),

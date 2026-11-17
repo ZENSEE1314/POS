@@ -4,7 +4,7 @@ import type { Actor } from '../auth.ts';
 import { require_, whoOf } from '../auth.ts';
 
 /** Customer app features a company can switch on or off. */
-export const FEATURES = ['service', 'song', 'bottle', 'gift', 'loyalty', 'referral', 'spin', 'events', 'games', 'support', 'pets'] as const;
+export const FEATURES = ['service', 'song', 'bottle', 'gift', 'loyalty', 'referral', 'spin', 'events', 'games', 'support', 'bot', 'pets'] as const;
 export type Feature = typeof FEATURES[number];
 /** Pet care only makes sense at venues with pets, so it starts switched off. */
 const OFF_BY_DEFAULT: readonly Feature[] = ['pets'];

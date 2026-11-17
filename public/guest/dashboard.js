@@ -19,7 +19,7 @@ addStrings({
     'db.rewards': 'Rewards', 'db.invite': 'Invite', 'db.events': 'Events', 'db.history': 'History', 'db.pets': 'Pets', 'db.support': 'Contact',
     'db.activity': 'Activity', 'db.location': 'Location', 'db.switch': 'Switch merchant', 'db.switchSub': 'Your other places, or find a new one',
     'db.current': 'Current', 'db.findMore': 'Find more places', 'db.noPlaces': 'You have not visited any other place yet.',
-    'db.orderAt': 'Order · {store}', 'db.voucherGot': 'Voucher', 'db.atTable': 'Table {table} · {store}',
+    'db.map': 'Map', 'db.orderAt': 'Order · {store}', 'db.voucherGot': 'Voucher', 'db.atTable': 'Table {table} · {store}',
     'me.title': 'Me', 'me.account': 'My account', 'me.settings': 'Settings', 'me.walletSub': 'Balance, top-ups and stored bottles',
     'me.historySub': 'Past orders and bookings', 'me.activitySub': 'Points, payments and requests', 'me.rewardsSub': 'Points, vouchers and prize wheel',
     'me.inviteSub': 'Share your code and earn points', 'me.songsSub': 'Request a song and see the queue',
@@ -42,7 +42,7 @@ addStrings({
     'db.rewards': '积分福利', 'db.invite': '邀请', 'db.events': '活动', 'db.history': '记录', 'db.pets': '宠物', 'db.support': '联系门店',
     'db.activity': '动态', 'db.location': '门店', 'db.switch': '切换商家', 'db.switchSub': '去过的其他商家，或发现新商家',
     'db.current': '当前', 'db.findMore': '发现更多商家', 'db.noPlaces': '您还没有去过其他商家。',
-    'db.orderAt': '订单 · {store}', 'db.voucherGot': '兑换券', 'db.atTable': '{table} 桌 · {store}',
+    'db.map': '导航', 'db.orderAt': '订单 · {store}', 'db.voucherGot': '兑换券', 'db.atTable': '{table} 桌 · {store}',
     'me.title': '我的', 'me.account': '我的账户', 'me.settings': '设置', 'me.walletSub': '余额、充值与存酒',
     'me.historySub': '历史订单与预订', 'me.activitySub': '积分、付款与服务请求', 'me.rewardsSub': '积分、兑换券与幸运转盘',
     'me.inviteSub': '分享邀请码赚积分', 'me.songsSub': '点歌并查看排队',
@@ -162,6 +162,17 @@ function quickActions(v, store) {
   ].filter(Boolean);
 }
 
+const MAP_SEARCH = 'https://uri.amap.com/search';
+
+/** Street, city and postal code with a button that opens the address in a map app (Amap in the browser or its app). */
+function whereHtml(store) {
+  if (!store?.address && !store?.city) return '';
+  const line = [store.address, store.city, store.postalCode].filter(Boolean).join(', ');
+  const query = [store.city, store.address].filter(Boolean).join(' ');
+  return html`<div class="g-where">${icon('pin', 'g-where__icon')}<span class="g-where__text"><strong>${store.name}</strong><span>${line}</span></span>
+    <a class="g-btn g-btn--small" href="${MAP_SEARCH}?keyword=${enc(query)}&src=nightpos" target="_blank" rel="noopener">${t('db.map')}</a></div>`;
+}
+
 const quickGrid = (actions) => html`<nav class="g-quick" aria-label="${t('db.quick')}">${actions.map((a) =>
   html`<a class="g-quick__item" href="${a.href}" data-link><span class="g-quick__icon">${icon(a.icon)}</span><span class="g-quick__label">${a.label}</span></a>`)}</nav>`;
 
@@ -222,6 +233,7 @@ export async function mountDashboard(root, v, { store, navigate, newsHtml, cover
   setHtml(root, html`${switcherHtml(v, store)}
     ${!session.customer && coverHtml}
     <div data-member>${session.customer ? html`<div class="g-skel g-skel--card"></div>` : ''}</div>
+    ${whereHtml(store)}
     <h2 class="g-cat">${t('db.quick')}</h2>${quickGrid(quickActions(v, store))}
     ${newsHtml}
     <div data-recent></div>`);

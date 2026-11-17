@@ -31,6 +31,7 @@ import { buildAssetManifest } from './static-assets.ts';
 import { assertSafeForProduction } from './prod-guard.ts';
 import { syncOps } from './sync.ts';
 import { cleanPhone, normalizePhone } from './phone.ts';
+import { handleWechatOa } from './guest/wechat-oa.ts';
 import { FileBody, HtmlPage, Redirect } from './responses.ts';
 import { AlipayProvider } from './payments/alipay.ts';
 import { buildIdentityProviders } from './guest/identity.ts';
@@ -170,7 +171,7 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
   route('POST', '/api/signup', false, async ({ db, body, ip }) => {
     if (!signupOpen) throw new DomainError('self sign-up is disabled', 403);
     if (!signupLimiter.allow(ip)) throw new DomainError('too many sign-ups from this address', 429);
-    const made = await createCompany(db, body);
+    const made = await createCompany(db, body, { requireAddress: true });
     await logEvent(db, 'info', 'company.signup', 'new company', { code: body.code });
     return made;
   });
@@ -442,6 +443,14 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
           throw new DomainError('webhook rejected', 401);
         }
         return send(res, 200, ack, m[1] === 'alipay' ? 'text/plain' : 'application/json');
+      }
+      const oa = /^\/webhooks\/wechat-oa\/([^/]+)$/.exec(url.pathname);
+      if (oa && (req.method === 'GET' || req.method === 'POST')) {
+        if (!apiIpLimiter.allow(`ip|${ip}`)) throw new DomainError('rate limit exceeded', 429);
+        const raw = req.method === 'POST' ? await readRaw(req) : '';
+        const r = await handleWechatOa(db, decodeParam(oa[1]), req.method, url.searchParams, raw, baseUrl);
+        status = r.status;
+        return send(res, r.status, r.body, r.type);
       }
       if (req.method === 'POST' && url.pathname === '/webhooks/douyin') {
         const raw = await readRaw(req);
