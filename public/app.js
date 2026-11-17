@@ -17,6 +17,7 @@ import { mountGuestOrders, GUEST_ORDERS_CHANGED } from './guest-orders.js';
 import { mountCounter } from './counter.js';
 import { mountStock } from './stock.js';
 import { mountOffice, openJoinDialog } from './office.js';
+import { mountHostDesk } from './host-desk.js';
 import { hasModule, BUSINESS_TYPES, BUSINESS_CHANGED } from './business.js';
 import { initOffline, syncPillHtml, mountSyncPill, openSyncPanel, syncState, syncNow, forgetEverything, offlineSignedIn } from './offline/index.js';
 import { openPrintDialog } from './print/dialog.js';
@@ -28,6 +29,7 @@ const SIGNUP_PIN_MIN = 6;
 // `module`: the tab only shows when the company has that module switched on.
 const TABS = [
   { id: 'floor', mount: mountFloor, module: 'tables' },
+  { id: 'host', mount: mountHostDesk, perm: 'table.open', module: 'tables' },
   { id: 'counter', mount: mountCounter, perm: 'order.add', module: 'counter' },
   { id: 'orders', mount: mountGuestOrders, perm: 'order.add', module: 'guestApp' },
   { id: 'bookings', mount: mountBookings, module: 'bookings' },

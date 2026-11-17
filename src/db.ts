@@ -569,6 +569,15 @@ const MIGRATIONS: Array<{ id: number; statements: string[] }> = [
       'CREATE INDEX IF NOT EXISTS bills_member ON bills (member_id)',
     ],
   },
+  {
+    // Host desk: a table held for a guest on the way (锁台).
+    id: 21,
+    statements: [
+      'ALTER TABLE dining_tables ADD COLUMN IF NOT EXISTS locked_at BIGINT',
+      'ALTER TABLE dining_tables ADD COLUMN IF NOT EXISTS locked_by BIGINT',
+      "ALTER TABLE dining_tables ADD COLUMN IF NOT EXISTS lock_note TEXT NOT NULL DEFAULT ''",
+    ],
+  },
 ];
 
 async function migrate(db: Db): Promise<void> {

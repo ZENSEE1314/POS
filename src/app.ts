@@ -14,6 +14,7 @@ import { registerStockRoutes } from './stock-routes.ts';
 import { registerPeopleRoutes } from './people-routes.ts';
 import { registerOfficeRoutes } from './office-routes.ts';
 import { requestJoin } from './office.ts';
+import { hostDesk, setTableLock } from './host-desk.ts';
 import { expireStash, lookupStash, retrieveWine, storeWine, transferStash } from './stash.ts';
 import { cancelBooking, confirmBooking, createBooking, ingestDouyinBooking, listBookings, liveVoucherVerifier, mockVoucherVerifier, redeemVoucher, verifyDouyinSignature } from './bookings.ts';
 import type { DouyinBookingEvent } from './bookings.ts';
@@ -216,6 +217,11 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
       `SELECT t.*, (SELECT id FROM bills b WHERE b.table_id = t.id AND b.status = 'open') AS bill_id
        FROM dining_tables t WHERE t.store_id = ? AND (t.active OR ?) ORDER BY t.id`, [actor.storeId, query.get('all') === '1']));
   route('POST', '/api/tables', true, async ({ db, actor, body }) => ({ tableId: await createTable(db, actor, body) }));
+  route('GET', '/api/host-desk', true, ({ db, actor }) => hostDesk(db, actor));
+  route('POST', '/api/tables/:id/lock', true, async ({ db, actor, params, body }) => {
+    await setTableLock(db, actor, num(params[0]), body);
+    return { ok: true };
+  });
   route('PATCH', '/api/tables/:id', true, async ({ db, actor, params, body }) => {
     await updateTable(db, actor, num(params[0]), body);
     return { ok: true };

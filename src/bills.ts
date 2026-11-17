@@ -6,6 +6,7 @@ import { cleanPhone } from './phone.ts';
 import { hasModule, requireModule } from './business.ts';
 import { linePrice, priceFor } from './pricing.ts';
 import { claimCustomer } from './office.ts';
+import { releaseLockForOpen } from './host-desk.ts';
 
 export interface BillTotals {
   subtotal: number;      // active sale lines
@@ -37,6 +38,7 @@ export async function openTable(db: Db, actor: Actor, input: { tableId: number; 
     let repId = input.repId;
     let phone = input.phone;
     let bookingId: number | undefined;
+    let bookingTableId: number | null = null;
     if (input.bookingId) {
       const booking = await t.one('SELECT * FROM bookings WHERE id = ? AND store_id = ? FOR UPDATE', [input.bookingId, actor.storeId]);
       if (!booking) throw new DomainError('booking not found', 404);
@@ -44,7 +46,9 @@ export async function openTable(db: Db, actor: Actor, input: { tableId: number; 
       repId ??= booking.rep_id ?? undefined;
       phone ??= booking.phone;
       bookingId = booking.id;
+      bookingTableId = booking.table_id === null ? null : Number(booking.table_id);
     }
+    await releaseLockForOpen(t, table, bookingTableId);
     // Without the reps module nobody earns sales commission, so the person opening the table owns the bill.
     if (!repId && !(await hasModule(t, actor.tenantId, 'reps'))) repId = actor.id;
     // Commission ownership is decided here; forgetting the rep is the most common error in competing systems.
