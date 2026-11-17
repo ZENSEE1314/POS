@@ -1,51 +1,41 @@
 // Customer app entry: boots the session and routes /g/... addresses to screens.
 //   /g/                              enter a venue code
-//   /g/<company>                     venue home (choose a location)
-//   /g/<company>/account             my account at this company
+//   /g/<company>                     member dashboard (points, wallet, quick actions, recent activity)
+//   /g/<company>/me                  profile and settings (/account is the old address)
+//   /g/<company>/wallet|history|activity|songs|invite      member pages
 //   /g/<company>/rewards|spin|events|games|pets|support   venue-wide extras
-//   /g/<company>/<store>             location home
+//   /g/<company>/<store>             the dashboard with that location chosen
 //   /g/<company>/<store>/menu        browse the menu
 //   /g/<company>/<store>/book        book a table
 //   /g/<company>/<store>/t/<token>   the table QR: order, my orders, bill and pay
-import { t, tOr, getLang, setLang, loadLang, LANGS, addStrings } from './i18n.js';
+import { t, tOr, getLang, setLang, loadLang, LANGS } from './i18n.js';
 import { html, raw, setHtml, session, get, loadToken, toastError, skeleton } from './core.js';
 import { finishProviderLogin, loadCustomer } from './login.js';
 import { mountMenuBrowse, mountTable, waitForPayment } from './table.js';
-import { mountAccount, mountBooking } from './account.js';
-import { captureReferral, claimPendingReferral, mountEvents, mountPets, mountRewards, mountSpin, mountSupport } from './extras.js';
+import { mountBooking } from './account.js';
+import { captureReferral, claimPendingReferral, mountEvents, mountInvite, mountPets, mountRewards, mountSpin, mountSupport } from './extras.js';
 import { mountGames } from './games.js';
-import { mountShopOrder, mountMyOrders } from './shop.js';
+import { mountShopOrder } from './shop.js';
+import { mountActivity, mountDashboard, mountHistory, mountMe, mountSongs, mountWallet, pickedStore, rememberStore } from './dashboard.js';
 import { applyTheme } from './themes.js';
 import { icon } from './icons.js';
 
-addStrings({
-  en: {
-    'venue.menu.other': 'Menu', 'venue.menuSub.other': 'What we have and prices',
-    'venue.menu.retail': 'Products', 'venue.menuSub.retail': 'What is in stock and prices', 'venue.menu.pet': 'Products and services', 'venue.menuSub.pet': 'Food, treats, care and prices',
-    'venue.menu.salon': 'Services', 'venue.menuSub.salon': 'Treatments and prices',
-    'venue.book.other': 'Book a table', 'venue.bookSub.other': 'Reserve for today or another day',
-    'venue.eventsSub.other': 'Events, offers and special days', 'venue.accountSub.other': 'Wallet balance, orders and bookings',
-    'venue.book.salon': 'Book an appointment', 'venue.bookSub.salon': 'Pick a day and time', 'venue.book.pet': 'Book a visit', 'venue.bookSub.pet': 'Cafe visit, grooming or care',
-  },
-  zh: {
-    'venue.menu.other': '菜单', 'venue.menuSub.other': '品类与价格',
-    'venue.menu.retail': '商品', 'venue.menuSub.retail': '在售商品与价格', 'venue.menu.pet': '商品与服务', 'venue.menuSub.pet': '主粮、零食、护理与价格',
-    'venue.menu.salon': '服务项目', 'venue.menuSub.salon': '项目与价格',
-    'venue.book.other': '预订座位', 'venue.bookSub.other': '今天或其他日期',
-    'venue.eventsSub.other': '活动、优惠与特别日子', 'venue.accountSub.other': '储值余额、订单与预约',
-    'venue.book.salon': '预约', 'venue.bookSub.salon': '选择日期和时间', 'venue.book.pet': '预约到店', 'venue.bookSub.pet': '咖啡馆、洗护或寄养',
-  },
-});
-
 /** Venue-wide screens; these words are never store codes. */
 const EXTRAS = {
+  me: (root, ctx) => mountMe(root, ctx),
+  account: (root, ctx) => mountMe(root, ctx),
+  wallet: (root, ctx) => mountWallet(root, ctx),
+  history: (root, ctx) => mountHistory(root, ctx),
+  orders: (root, ctx) => mountHistory(root, ctx),
+  activity: (root, ctx) => mountActivity(root, ctx),
+  songs: (root, ctx) => mountSongs(root, ctx),
+  invite: (root, ctx) => mountInvite(root, ctx),
   rewards: (root, ctx) => mountRewards(root, ctx),
   spin: (root, ctx) => mountSpin(root, ctx),
   events: (root, ctx) => mountEvents(root, ctx),
-  games: (root) => mountGames(root),
+  games: (root, ctx) => mountGames(root, { spinHref: ctx.features.loyalty && ctx.features.spin ? `/g/${enc(ctx.company)}/spin` : null }),
   pets: (root, ctx) => mountPets(root, ctx),
   support: (root, ctx) => mountSupport(root, ctx),
-  orders: (root, ctx) => mountMyOrders(root, ctx),
 };
 
 const appEl = document.getElementById('app');
@@ -73,23 +63,22 @@ async function venue(company) {
 }
 
 /**
- * Bottom menu bar for a venue: Home, Book, Rewards, Games, then Events/Contact, Account, keeping only what the venue has
- * switched on. `store` is the location to book at (the booking screen lets the guest pick another).
+ * Bottom menu bar for a venue: Home, Order (or Menu), Rewards (or Games), History, Me, keeping only what the venue has
+ * switched on. `store` is the location Order opens at.
  */
-function tabsFor(v, store = v.stores[0]) {
+function tabsFor(v, store = pickedStore(v)) {
   const company = enc(v.company.code);
   const f = v.features ?? {};
+  const at = store && `/g/${company}/${enc(store.code)}`;
   const optional = [
-    v.bookings !== false && store && { href: `/g/${company}/${enc(store.code)}/book`, icon: 'calendar', label: t('nav.book') },
-    f.loyalty && { href: `/g/${company}/rewards`, icon: 'gift', label: t('venue.rewards') },
-    f.games && { href: `/g/${company}/games`, icon: 'dice', label: t('nav.games') },
-    f.events && { href: `/g/${company}/events`, icon: 'star', label: t('venue.events') },
-    f.support && { href: `/g/${company}/support`, icon: 'chat', label: t('venue.support') },
+    store && (v.orderAhead ? { href: `${at}/order`, icon: 'bag', label: t('db.order') } : { href: `${at}/menu`, icon: 'menu', label: t('db.menu') }),
+    f.loyalty ? { href: `/g/${company}/rewards`, icon: 'gift', label: t('venue.rewards') } : f.games && { href: `/g/${company}/games`, icon: 'dice', label: t('nav.games') },
+    { href: `/g/${company}/history`, icon: 'clock', label: t('db.history') },
   ].filter(Boolean);
   return [
     { href: `/g/${company}`, icon: 'home', label: t('nav.home') },
     ...optional.slice(0, MAX_TABS - 2),
-    { href: `/g/${company}/account`, icon: 'user', label: t('nav.account') },
+    { href: `/g/${company}/me`, icon: 'user', label: t('nav.account') },
   ];
 }
 
@@ -111,7 +100,7 @@ function frame() {
       <div class="g-top__tools">
         <div class="g-lang" role="group" aria-label="${t('lang.label')}">${LANGS.map((l) =>
           html`<button type="button" data-lang="${l}" aria-pressed="${String(getLang() === l)}" lang="${l === 'zh' ? 'zh-CN' : 'en'}">${t(`lang.${l}`)}</button>`)}</div>
-        ${company && html`<a class="g-btn g-btn--small" href="/g/${enc(company)}/account" data-link aria-label="${t('venue.account')}">${session.customer ? icon('user') : t('login.title')}</a>`}
+        ${company && html`<a class="g-btn g-btn--small" href="/g/${enc(company)}/me" data-link aria-label="${t('venue.account')}">${session.customer ? icon('user') : t('login.title')}</a>`}
       </div></header>
     <main id="main"></main>
     <p class="g-foot">${t('foot.text')}</p>
@@ -190,12 +179,6 @@ function landing(root) {
   }
 }
 
-const tile = (href, iconName, title, sub) => html`<a class="g-tile" href="${href}" data-link><span class="g-tile__mark">${icon(iconName)}</span>
-  <span class="g-tile__text"><strong>${title}</strong><span>${sub}</span></span>${icon('chevron', 'g-tile__chevron')}</a>`;
-
-/** Grid or list, as the company chose in Admin > App design. */
-const actionsClass = (v) => (v.theme?.layout === 'grid' ? 'g-actions g-actions--grid' : 'g-actions');
-
 /** Cover photo (or a brand-colour banner), the company's own headline and tagline, and its logo. */
 function heroHtml(v, eyebrow, title, extra = '') {
   const th = v.theme ?? {};
@@ -218,48 +201,15 @@ function newsHtml(v, storeName = null) {
       ${n.store && !storeName && html`<p class="g-hint">${n.store}</p>`}</div></article>`)}</section>`;
 }
 
-function venueHome(root, v) {
-  const company = v.company.code;
-  const where = v.stores.length === 1 && placeLine(v.stores[0]);
-  setHtml(root, html`<a class="g-back" href="/g/" data-link>${icon('back')}<span>${t('dir.allShort')}</span></a>
-    ${heroHtml(v, t('venue.welcome'), v.theme?.headline || v.company.name, where ? html`<p class="g-cover__where">${icon('pin')}<span>${where}</span></p>` : '')}
-    ${newsHtml(v)}
-    ${v.stores.length > 1 && html`<h2 class="g-cat">${t('venue.pickStore')}</h2>`}
-    <div class="${actionsClass(v)}">${v.stores.length > 1
-      ? v.stores.map((s) => tile(`/g/${enc(company)}/${enc(s.code)}`, 'pin', s.name, placeLine(s) || t('venue.storeSub')))
-      : storeTiles(company, v.stores[0], v)}</div>
-    <h2 class="g-cat">${t('venue.more')}</h2>
-    <div class="${actionsClass(v)}">${extraTiles(company, v.features ?? {}, v)}</div>`);
-}
-
-/** Bars keep their own words; other businesses get wording for their kind (menu vs products, booking vs appointment). */
-const word = (v, key) => (v.business && v.business !== 'bar' ? tOr(`${key}.${v.business}`, tOr(`${key}.other`, t(key))) : t(key));
-
-const storeTiles = (company, s, v) => [
-  v.orderAhead && tile(`/g/${enc(company)}/${enc(s.code)}/order`, 'bag', t('shop.order'), t('shop.orderSub')),
-  tile(`/g/${enc(company)}/${enc(s.code)}/menu`, 'menu', word(v, 'venue.menu'), word(v, 'venue.menuSub')),
-  v.bookings !== false && tile(`/g/${enc(company)}/${enc(s.code)}/book`, 'calendar', word(v, 'venue.book'), word(v, 'venue.bookSub')),
-];
-const heroHint = (v) => (v.tables === false ? '' : t('venue.scanHint'));
-
-const extraTiles = (company, f, v) => [
-  v.orderAhead && tile(`/g/${enc(company)}/orders`, 'receipt', t('shop.mine'), t('shop.mineSub')),
-  f.events && tile(`/g/${enc(company)}/events`, 'star', t('venue.events'), word(v, 'venue.eventsSub')),
-  f.loyalty && tile(`/g/${enc(company)}/rewards`, 'gift', t('venue.rewards'), t('venue.rewardsSub')),
-  f.games && tile(`/g/${enc(company)}/games`, 'dice', t('venue.games'), t('venue.gamesSub')),
-  f.pets && tile(`/g/${enc(company)}/pets`, 'paw', t('venue.pets'), t('venue.petsSub')),
-  f.support && tile(`/g/${enc(company)}/support`, 'chat', t('venue.support'), t('venue.supportSub')),
-  tile(`/g/${enc(company)}/account`, 'user', t('venue.account'), word(v, 'venue.accountSub')),
-];
-
-function storeHome(root, v, store) {
+/** The dashboard at one location of a company (the one the guest chose last, unless the address names another). */
+function home(root, v, store) {
+  rememberStore(v, store);
   const where = placeLine(store);
-  setHtml(root, html`${heroHtml(v, v.company.name, store.name, where ? html`<p class="g-cover__where">${icon('pin')}<span>${where}</span></p>` : '')}
-    ${newsHtml(v, store.name)}
-    <div class="${actionsClass(v)}">${storeTiles(v.company.code, store, v)}</div>
-    <h2 class="g-cat">${t('venue.more')}</h2>
-    <div class="${actionsClass(v)}">${extraTiles(v.company.code, v.features ?? {}, v)}</div>`);
+  const cover = heroHtml(v, t('venue.welcome'), v.theme?.headline || v.company.name, where ? html`<p class="g-cover__where">${icon('pin')}<span>${where}</span></p>` : '');
+  return mountDashboard(root, v, { store, navigate, newsHtml: newsHtml(v, v.stores.length > 1 ? store.name : null), coverHtml: cover });
 }
+
+const heroHint = (v) => (v.tables === false ? '' : t('venue.scanHint'));
 
 /** Sets the header and the company's theme together, so the page never shows one company's colours with another's name. */
 function useVenue(v, h) {
@@ -282,9 +232,8 @@ async function route() {
       useVenue(v, { title: v.company.name, subtitle: '', company: v.company.code, nav: tabsFor(v) });
       root = frame();
       void claimPendingReferral(v.company.code);
-      if (second === 'account') await mountAccount(root, { company: v.company.code, navigate });
-      else if (EXTRAS[second]) await EXTRAS[second](root, { company: v.company.code, stores: v.stores, navigate });
-      else venueHome(root, v);
+      if (EXTRAS[second]) await EXTRAS[second](root, { company: v.company.code, stores: v.stores, features: v.features ?? {}, navigate });
+      else await home(root, v, pickedStore(v));
       return;
     }
     if (third === 't' && fourth) {
@@ -303,7 +252,7 @@ async function route() {
     if (third === 'menu') await mountMenuBrowse(root, { company: v.company.code, store: store.code });
     else if (third === 'order' && v.orderAhead) cleanup = await mountShopOrder(root, { company: v.company.code, store: store.code, navigate });
     else if (third === 'book') await mountBooking(root, { company: v.company.code, store: store.code, stores: v.stores, navigate });
-    else storeHome(root, v, store);
+    else await home(root, v, store);
   } catch (e) {
     if (e.status === 404) setHtml(root, html`<p class="g-empty">${t('venue.notFound')}</p>`);
     else {

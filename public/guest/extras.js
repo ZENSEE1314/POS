@@ -2,6 +2,7 @@
 import { t, getLang } from './i18n.js';
 import { html, raw, setHtml, fmtDate, fmtDateTime, session, get, post, patch, sheet, toast, busy, skeleton } from './core.js';
 import { ensureSignedIn } from './login.js';
+import { icon } from './icons.js';
 
 const enc = encodeURIComponent;
 const REF_KEY = 'nightpos.ref';
@@ -74,42 +75,73 @@ export async function mountRewards(root, { company, navigate }) {
       throw e;
     }
     setHtml(root, html`
-      <div class="g-hero"><p class="g-hero__eyebrow">${d.company.name}</p><h1 class="g-hero__title">${t('rw.title')}</h1></div>
-      <section class="g-card" aria-labelledby="pts"><h2 id="pts" class="g-card__title">${t('rw.points')}</h2>
-        <p class="g-balance g-num">${d.balance}</p><p class="g-hint">${t('rw.earn', { n: d.pointsPerYuan })}</p>
-        ${d.spin && html`<a class="g-tile g-gap" href="/g/${enc(company)}/spin" data-link><span class="g-tile__mark" aria-hidden="true">◎</span>
-          <span class="g-tile__text"><strong>${t('rw.spinTile')}</strong><span>${t('rw.spinSub', { n: d.spin.cost })}</span></span></a>`}</section>
+      <header class="g-pagehead"><h1 class="g-pagehead__title">${t('rw.title')}</h1></header>
+      <section class="g-balancecard" aria-labelledby="pts"><span id="pts" class="g-balancecard__label">${icon('star')}${t('rw.points')}</span>
+        <strong class="g-balancecard__value g-num">${d.balance}</strong><p class="g-balancecard__hint">${t('rw.earn', { n: d.pointsPerYuan })}</p></section>
+      ${d.spin && html`<a class="g-tile g-gap" href="/g/${enc(company)}/spin" data-link><span class="g-tile__mark">${icon('wheel')}</span>
+        <span class="g-tile__text"><strong>${t('rw.spinTile')}</strong><span>${t('rw.spinSub', { n: d.spin.cost })}</span></span>${icon('chevron', 'g-tile__chevron')}</a>`}
       <section class="g-card" aria-labelledby="cat"><h2 id="cat" class="g-card__title">${t('rw.catalog')}</h2>
         ${d.rewards.length ? html`<ul class="g-lines">${d.rewards.map((r) => html`<li><span><strong>${bi(r.name, r.nameEn)}</strong></span>
           <button type="button" class="g-btn g-btn--small ${d.balance >= r.cost ? 'g-btn--primary' : ''}" data-redeem="${r.id}" ${d.balance < r.cost ? 'disabled' : ''}>${t('rw.redeem', { n: t('rw.pts', { n: r.cost }) })}</button></li>`)}</ul>`
           : html`<p class="g-muted">${t('rw.none')}</p>`}</section>
       <section class="g-card" aria-labelledby="vch"><h2 id="vch" class="g-card__title">${t('rw.vouchers')}</h2>
         ${d.vouchers.length ? html`<ul class="g-lines">${d.vouchers.map(voucherHtml)}</ul>` : html`<p class="g-muted">${t('rw.noVouchers')}</p>`}</section>
-      ${d.referral && html`<section class="g-card" aria-labelledby="ref"><h2 id="ref" class="g-card__title">${t('ref.title')}</h2>
-        <p class="g-muted g-lead">${t('ref.text', { n: d.referral.points })}</p>
-        <dl class="g-sum"><dt>${t('ref.code')}</dt><dd class="g-voucher g-num">${d.referral.code}</dd></dl>
-        ${d.referral.invited > 0 && html`<p class="g-hint">${t('ref.stats', { n: d.referral.invited, done: d.referral.rewarded })}</p>`}
-        <button type="button" class="g-btn g-btn--block g-gap" data-copy="${location.origin}/g/${enc(company)}?ref=${d.referral.code}">${t('ref.copy')}</button>
-        ${d.referral.referredBy ? html`<p class="g-hint g-gap">${t('ref.used')}</p>` : html`<form class="g-gap" data-refform novalidate>
-          <div class="g-field"><label for="rc">${t('ref.enter')}</label><input id="rc" maxlength="8" autocapitalize="characters" autocomplete="off" placeholder="${t('ref.ph')}"></div>
-          <button type="submit" class="g-btn g-btn--block">${t('ref.apply')}</button></form>`}</section>`}
+      ${d.referral && html`<a class="g-tile g-gap" href="/g/${enc(company)}/invite" data-link><span class="g-tile__mark">${icon('users')}</span>
+        <span class="g-tile__text"><strong>${t('ref.title')}</strong><span>${t('ref.text', { n: d.referral.points })}</span></span>${icon('chevron', 'g-tile__chevron')}</a>`}
       <section class="g-card" aria-labelledby="hist"><h2 id="hist" class="g-card__title">${t('rw.history')}</h2>
         ${d.ledger.length ? html`<ul class="g-lines">${d.ledger.map((l) => html`<li><span>${fmtDate(l.ts)}<br><span class="g-hint">${reasonLabel(l.reason)}</span></span>
           <span class="g-num">${l.delta > 0 ? '+' : ''}${l.delta}</span></li>`)}</ul>` : html`<p class="g-muted">${t('rw.noHistory')}</p>`}</section>`);
   };
 
   root.addEventListener('click', async (e) => {
-    const b = e.target.closest('button');
+    const b = e.target.closest('[data-redeem]');
     if (!b) return;
-    if (b.dataset.redeem) {
-      await busy(b, async () => {
-        const r = await post(`/api/guest/loyalty/${enc(company)}/redeem`, { rewardId: Number(b.dataset.redeem) });
-        toast(t('rw.redeemed', { code: r.voucher.code }), 'success');
-        await load();
-      })();
-    } else if (b.dataset.copy) {
-      try { await navigator.clipboard.writeText(b.dataset.copy); toast(t('ref.copied'), 'success'); } catch { toast(b.dataset.copy); }
+    await busy(b, async () => {
+      const r = await post(`/api/guest/loyalty/${enc(company)}/redeem`, { rewardId: Number(b.dataset.redeem) });
+      toast(t('rw.redeemed', { code: r.voucher.code }), 'success');
+      await load();
+    })();
+  });
+  void navigate;
+  await withGuest(root, load);
+}
+
+// ---------- invite friends ----------
+
+export async function mountInvite(root, { company }) {
+  const load = async () => {
+    let d;
+    try {
+      d = await get(`/api/guest/loyalty/${enc(company)}`);
+    } catch (e) {
+      if (e.status === 404) { setHtml(root, html`<p class="g-empty">${t('rw.off')}</p>`); return; }
+      throw e;
     }
+    const r = d.referral;
+    if (!r) { setHtml(root, html`<p class="g-empty">${t('rw.off')}</p>`); return; }
+    const link = `${location.origin}/g/${enc(company)}?ref=${r.code}`;
+    setHtml(root, html`<section class="g-invite"><span class="g-invite__icon">${icon('users')}</span>
+        <h1 class="g-invite__title">${t('ref.title')}</h1><p class="g-invite__text">${t('ref.text', { n: r.points })}</p>
+        <p class="g-hint">${t('ref.code')}</p><p class="g-invite__code g-num">${r.code}</p>
+        <div class="g-invite__btns"><button type="button" class="g-btn g-btn--primary" data-share="${link}">${t('ref.share')}</button>
+          <button type="button" class="g-btn" data-copy="${link}">${t('ref.copy')}</button></div></section>
+      <div class="g-statrow"><div class="g-statbox"><strong class="g-num">${r.invited}</strong><span>${t('ref.invited')}</span></div>
+        <div class="g-statbox"><strong class="g-num">${r.rewarded}</strong><span>${t('ref.joined')}</span></div>
+        <div class="g-statbox"><strong class="g-num">${r.rewarded * r.points}</strong><span>${t('ref.earned')}</span></div></div>
+      <h2 class="g-cat">${t('ref.how')}</h2>
+      <ol class="g-steps"><li>${t('ref.step1')}</li><li>${t('ref.step2')}</li><li>${t('ref.step3', { n: r.points })}</li></ol>
+      <section class="g-card">${r.referredBy ? html`<p class="g-hint">${t('ref.used')}</p>` : html`<form data-refform novalidate>
+        <div class="g-field"><label for="rc">${t('ref.enter')}</label><input id="rc" maxlength="8" autocapitalize="characters" autocomplete="off" placeholder="${t('ref.ph')}"></div>
+        <button type="submit" class="g-btn g-btn--block">${t('ref.apply')}</button></form>`}</section>`);
+  };
+  root.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-copy], [data-share]');
+    if (!b) return;
+    const link = b.dataset.copy ?? b.dataset.share;
+    if (b.dataset.share && navigator.share) {
+      try { await navigator.share({ title: t('ref.title'), url: link }); return; } catch { /* closed the share sheet: fall back to copying */ }
+    }
+    try { await navigator.clipboard.writeText(link); toast(t('ref.copied'), 'success'); } catch { toast(link); }
   });
   root.addEventListener('submit', async (e) => {
     const form = e.target.closest('[data-refform]');
@@ -121,7 +153,6 @@ export async function mountRewards(root, { company, navigate }) {
       await load();
     })();
   });
-  void navigate;
   await withGuest(root, load);
 }
 
@@ -226,7 +257,7 @@ export function requestsHtml(list) {
     <span class="g-badge g-badge--${REQ_TONE[r.status]}">${t(`req.${r.status}`)}</span></li>`)}</ul>`;
 }
 
-function requestSummary(r) {
+export function requestSummary(r) {
   const d = r.detail;
   switch (r.kind) {
     case 'service': return t(`svc.reason.${d.reason}`) + (d.note ? `: ${d.note}` : '');

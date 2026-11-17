@@ -101,6 +101,18 @@ test('a song request reaches staff with title and artist', async () => {
   assert.deepEqual([r.detail.title, r.detail.artist], ['晴天', 'Jay Chou']);
 });
 
+test('a song request from the app without a table reaches staff at the chosen location', async () => {
+  const g = await guest('Lobby singer');
+  const { requestId } = (await request(g, { kind: 'song', company: 'doloruu', store: 'FLAG', title: '稻香' })).json;
+  const r = (await call('GET', '/api/guest-requests', undefined, staff.waiter)).json.find((x: any) => x.id === requestId);
+  assert.deepEqual([r.detail.title, r.tableName, r.storeCode], ['稻香', null, 'FLAG']);
+});
+
+test('a song request without a table needs a real location', async () => {
+  const g = await guest('Lost singer');
+  assert.equal((await request(g, { kind: 'song', company: 'doloruu', store: 'NOPE', title: '稻香' })).status, 404);
+});
+
 test('asking for a bottle the guest has not stored is a 404', async () => {
   const g = await guest('Bottle');
   await verifyPhone(g, '13800000101');

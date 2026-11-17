@@ -8,7 +8,7 @@ WeChat Pay, Alipay and Douyin (抖音来客) integrations; Postgres; self-monito
 ```bash
 npm install
 node scripts/dev.ts          # http://localhost:3500: simulated payments + demo company (dev only)
-npm test                     # 652 tests on embedded Postgres (PGlite); on a low-memory machine use --test-concurrency=1
+npm test                     # 673 tests on embedded Postgres (PGlite); on a low-memory machine use --test-concurrency=1
 node scripts/test-pg.ts      # same suite through the production `pg` driver over the Postgres wire protocol
 node scripts/simulate.ts http://localhost:3500 dev-admin-key 4 25   # multi-company load simulation + books audit
 ```
@@ -81,15 +81,21 @@ A mobile web page for guests, at `/g/<company code>` (works in WeChat, Alipay, D
 | Address | What the guest gets |
 |---|---|
 | `/g/` | **find a place**: search every listed business on the platform by name, city or street, filter by city, plus "my places" (businesses the guest has used). Each company only shares its public name, locations, city and address; owners set city/address in Admin > Locations in the app and can turn listing off in Admin > Customer app |
-| `/g/<company>` | venue home: choose a location, menu, book a table, my account (bottom menu bar: Home, Book, Rewards, Games, Me). Looks are the company's own, set in Admin > App design: theme (Night gold, Midnight blue, Noir, Daylight, Blush), brand colour (text contrast adjusted automatically), headline, tagline, list or grid buttons, logo and cover photo |
+| `/g/<company>` | **member dashboard**: switch merchant, choose a location, member card (points, wallet, vouchers, progress to the next reward), quick actions (order, menu, book, songs, games, prize wheel, rewards, invite, events, history, pets, contact, only those switched on), next booking, news, recent activity. Signed-out guests see the cover and a join card. Bottom menu bar: Home, Order, Rewards, History, Me. Looks are the company's own, set in Admin > App design: theme (Night gold, Midnight blue, Noir, Daylight, Blush), brand colour (text contrast adjusted automatically), headline, tagline, logo and cover photo |
+| `/g/<company>/<store>` | the same dashboard with that location chosen (remembered for next time) |
 | `/g/<company>/<store>/menu` | the menu with prices and sold-out items (browse only) |
 | `/g/<company>/<store>/t/<token>` | **table QR code**: order from the menu, follow "my orders", see the table's bill and pay it |
 | `/g/<company>/<store>/book` | request a booking (lands in the staff Bookings tab as "Customer app", status Requested) |
-| `/g/<company>/account` | wallet balance and history, stored bottles with pick-up codes, bookings, recent orders |
-| `/g/<company>/rewards` | points, redeem rewards for voucher codes, my vouchers, invite friends, points history |
+| `/g/<company>/me` | profile and settings: name, phone, sign-in methods, language, switch merchant, sign out, links to every member page (`/account` still works) |
+| `/g/<company>/wallet` | wallet balance, top-up and payment history, stored bottles with pick-up codes |
+| `/g/<company>/history` | all orders (cancel, pay pickup/delivery orders) and bookings (cancel, book again); `/orders` opens it too |
+| `/g/<company>/activity` | one timeline of points, wallet, orders, vouchers and requests, with filters |
+| `/g/<company>/songs` | request a song from the app (sent to the table the guest last scanned, else to the chosen location) and follow the queue |
+| `/g/<company>/invite` | invite code and link (share or copy), invited / joined / points earned, enter a friend's code |
+| `/g/<company>/rewards` | points, redeem rewards for voucher codes, my vouchers, points history |
 | `/g/<company>/spin` | prize wheel (costs points; prizes are points or freebie vouchers, never cash; 10 spins a day) |
 | `/g/<company>/events` | upcoming events at every location; *Book for this event* opens the booking form with the event attached |
-| `/g/<company>/games` | party games on one phone: dice cup, truth or dare, random "who's next" (nothing is sent or bet) |
+| `/g/<company>/games` | the prize wheel (when on) and party games on one phone: dice cup, truth or dare, random "who's next" (nothing is sent or bet) |
 | `/g/<company>/pets` | the guest's pets and pet care requests (grooming, bath, day care, boarding, visit). Off by default |
 | `/g/<company>/support` | message the venue (lost items, questions) and read the reply |
 

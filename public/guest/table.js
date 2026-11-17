@@ -70,6 +70,7 @@ export async function mountTable(root, { token, onTitle }) {
     return () => {};
   }
   onTitle?.({ title: info.store.name, subtitle: info.company.name, company: info.company.code, theme: info.theme });
+  rememberTable(info.company.code, token, info.table.name);
   const menu = await get(`/api/guest/venue/${encodeURIComponent(info.company.code)}/${encodeURIComponent(info.store.code)}/menu`);
   const products = new Map(menu.products.map((p) => [p.id, p]));
   const cartKey = `${CART_PREFIX}${token}`;
@@ -241,6 +242,22 @@ export async function mountTable(root, { token, onTitle }) {
     else if (document.visibilityState === 'visible' && session.customer && pendingCount() > 0) void loadOrders().then(render).catch(() => {});
   }, ORDER_POLL_MS);
   return () => { state.alive = false; clearInterval(state.timer); };
+}
+
+const LAST_TABLE_KEY = 'nightpos.lastTable';
+
+/** The table QR the guest scanned last in this tab, so a song request from the app's song page reaches that table. */
+function rememberTable(company, token, tableName) {
+  writeSession(LAST_TABLE_KEY, JSON.stringify({ company, token, tableName }));
+}
+
+export function lastTable(company) {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(LAST_TABLE_KEY) ?? 'null');
+    return saved && saved.company.toLowerCase() === company.toLowerCase() ? saved : null;
+  } catch {
+    return null;
+  }
 }
 
 function writeSession(key, value) {

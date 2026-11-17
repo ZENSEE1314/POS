@@ -2,7 +2,7 @@
 import { t, addStrings } from './i18n.js';
 import { html, setHtml, fmtMoney, fmtDateTime, productName, session, get, post, sheet, toast, toastError, busy, skeleton } from './core.js';
 import { ensureSignedIn, verifyPhone } from './login.js';
-import { menuHtml, loadCart, openPay } from './table.js';
+import { menuHtml, loadCart } from './table.js';
 
 const CART_PREFIX = 'nightpos.shopcart.';
 const MAX_QTY = 99;
@@ -19,7 +19,7 @@ addStrings({
     'shop.after': 'After the shop confirms your order you can pay for it here.', 'shop.empty': 'No pickup or delivery orders yet.',
     'shop.pay': 'Pay', 'shop.paid': 'Paid', 'shop.toPay': 'To pay: {amount}', 'shop.payAtShop': 'Pay in the app now, or when you collect.',
     'shop.step.ready': 'Ready for pickup', 'shop.step.out': 'On its way', 'shop.step.done': 'Done', 'shop.deliverTo': 'Deliver to: {address}',
-    'shop.pickupWhen': 'Pickup: {when}', 'shop.mode': '{mode} · {store}', 'menu.perKg': '{price}/kg', 'menu.weighInStore': 'Sold by weight, buy in store',
+    'shop.pickupWhen': 'Pickup: {when}', 'shop.atTable': 'Table {table} · {store}', 'shop.mode': '{mode} · {store}', 'menu.perKg': '{price}/kg', 'menu.weighInStore': 'Sold by weight, buy in store',
   },
   zh: {
     'shop.order': '自提或外送下单', 'shop.orderSub': '现在下单，到店自提或送货上门',
@@ -30,7 +30,7 @@ addStrings({
     'shop.after': '店家确认订单后，您可以在这里付款。', 'shop.empty': '还没有自提或外送订单。',
     'shop.pay': '付款', 'shop.paid': '已付款', 'shop.toPay': '待付：{amount}', 'shop.payAtShop': '可以现在在线付款，也可以取货时付款。',
     'shop.step.ready': '已备好，可自提', 'shop.step.out': '配送中', 'shop.step.done': '已完成', 'shop.deliverTo': '送至：{address}',
-    'shop.pickupWhen': '自提：{when}', 'shop.mode': '{mode} · {store}', 'menu.perKg': '{price}/千克', 'menu.weighInStore': '称重商品，请到店购买',
+    'shop.pickupWhen': '自提：{when}', 'shop.atTable': '{table} 桌 · {store}', 'shop.mode': '{mode} · {store}', 'menu.perKg': '{price}/千克', 'menu.weighInStore': '称重商品，请到店购买',
   },
 });
 
@@ -133,12 +133,14 @@ export async function mountShopOrder(root, { company, store, navigate }) {
   return () => root.removeEventListener('click', onClick);
 }
 
-function orderCard(o) {
+export function orderCard(o) {
   const due = o.bill?.status === 'open' ? o.bill.due : 0;
   return html`<article class="g-order">
     <div class="g-order__head"><span class="g-badge g-badge--${STATUS_TONE[o.status]}">${t(`orders.${o.status}`)}</span>
       <span class="g-num">${fmtMoney(o.total)}</span></div>
-    <p class="g-hint">${t('shop.mode', { mode: t(`shop.mode.${o.mode}`), store: o.storeName })} · ${fmtDateTime(o.createdAt)}</p>
+    <p class="g-hint">${o.mode && o.mode !== 'table' ? t('shop.mode', { mode: t(`shop.mode.${o.mode}`), store: o.storeName })
+      : t('shop.atTable', { table: o.tableName, store: o.storeName })} · ${fmtDateTime(o.createdAt)}</p>
+    ${o.toTableName && html`<p class="g-hint">${t('orders.giftTo', { name: o.toTableName })}</p>`}
     ${o.fulfilStatus && html`<p><span class="g-badge g-badge--ok">${t(`shop.step.${o.fulfilStatus}`)}</span></p>`}
     <ul class="g-lines">${o.items.map((i) => html`<li><span>${productName(i)} × ${i.qty}</span></li>`)}</ul>
     ${o.address && html`<p class="g-hint">${t('shop.deliverTo', { address: o.address })}</p>`}
@@ -149,34 +151,4 @@ function orderCard(o) {
       <button type="button" class="g-btn g-btn--primary g-gap" data-pay="${o.id}" data-due="${due}">${t('shop.pay')} · ${fmtMoney(due)}</button>`}
     ${o.bill?.status === 'settled' && html`<p class="g-badge g-badge--ok g-gap">${t('shop.paid')}</p>`}
   </article>`;
-}
-
-export async function mountMyOrders(root, { company }) {
-  setHtml(root, skeleton(4));
-  if (!session.customer && !await ensureSignedIn()) {
-    setHtml(root, html`<p class="g-empty">${t('login.why')}</p>`);
-    return;
-  }
-  const load = async () => {
-    const acct = await get(`/api/guest/account/${enc(company)}`);
-    const orders = acct.orders.filter((o) => o.mode && o.mode !== 'table');
-    setHtml(root, html`<h1 class="g-cat">${t('shop.mine')}</h1>
-      ${orders.length ? html`<div class="g-card">${orders.map(orderCard)}</div>` : html`<p class="g-empty">${t('shop.empty')}</p>`}`);
-  };
-  root.addEventListener('click', async (e) => {
-    const el = e.target.closest('button');
-    if (!el) return;
-    try {
-      if (el.dataset.cancel) {
-        await post(`/api/guest/orders/${el.dataset.cancel}/cancel`);
-        toast(t('orders.cancelled.toast'));
-        await load();
-      } else if (el.dataset.pay) {
-        await openPay(`/api/guest/orders/${el.dataset.pay}/pay`, Number(el.dataset.due), company, load);
-      }
-    } catch (err) {
-      toastError(err);
-    }
-  });
-  await load();
 }

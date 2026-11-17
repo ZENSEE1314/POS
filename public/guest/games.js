@@ -1,6 +1,7 @@
 // Party games played on one phone at the table. Entirely in the browser: nothing is sent, stored or bet.
 import { t, getLang } from './i18n.js';
 import { html, setHtml } from './core.js';
+import { icon } from './icons.js';
 
 const DICE_FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
 const DEFAULT_DICE = 5;
@@ -36,10 +37,11 @@ const CARDS = {
 const pickRandom = (list) => list[crypto.getRandomValues(new Uint32Array(1))[0] % list.length];
 const rollDie = () => crypto.getRandomValues(new Uint32Array(1))[0] % DICE_FACES.length;
 
-const tile = (game, mark, title, sub) => html`<button type="button" class="g-tile" data-game="${game}"><span class="g-tile__mark" aria-hidden="true">${mark}</span>
+const tile = (game, mark, title, sub) => html`<button type="button" class="g-tile" data-game="${game}"><span class="g-tile__mark g-tile__mark--glyph" aria-hidden="true">${mark}</span>
   <span class="g-tile__text"><strong>${title}</strong><span>${sub}</span></span></button>`;
 
-export function mountGames(root) {
+/** `spinHref` adds the venue's prize wheel (points-based) above the party games when the venue has it on. */
+export function mountGames(root, { spinHref = null } = {}) {
   const state = { game: null, dice: [], count: DEFAULT_DICE, shown: false, card: null, names: '', picked: '' };
 
   const back = () => html`<button type="button" class="g-btn g-btn--small" data-game="">${t('gm.back')}</button>`;
@@ -47,7 +49,8 @@ export function mountGames(root) {
   function render() {
     if (!state.game) {
       setHtml(root, html`<div class="g-hero"><h1 class="g-hero__title">${t('gm.title')}</h1><p class="g-hero__text">${t('gm.note')}</p></div>
-        <div class="g-actions">${tile('dice', '⚄', t('gm.dice'), t('gm.diceSub'))}${tile('tod', '?', t('gm.tod'), t('gm.todSub'))}${tile('pick', '☝', t('gm.pick'), t('gm.pickSub'))}</div>`);
+        <div class="g-actions">${spinHref && html`<a class="g-tile" href="${spinHref}" data-link><span class="g-tile__mark">${icon('wheel')}</span>
+          <span class="g-tile__text"><strong>${t('rw.spinTile')}</strong><span>${t('gm.spinSub')}</span></span>${icon('chevron', 'g-tile__chevron')}</a>`}${tile('dice', '⚄', t('gm.dice'), t('gm.diceSub'))}${tile('tod', '?', t('gm.tod'), t('gm.todSub'))}${tile('pick', '☝', t('gm.pick'), t('gm.pickSub'))}</div>`);
       return;
     }
     if (state.game === 'dice') {

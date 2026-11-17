@@ -10,7 +10,7 @@ import { int, storeByCode, tableByToken, tenantByCode, text } from './venue.ts';
 const KINDS = ['service', 'song', 'bottle', 'support', 'pet'] as const;
 type Kind = typeof KINDS[number];
 const FEATURE_OF: Record<Kind, Feature> = { service: 'service', song: 'song', bottle: 'bottle', support: 'support', pet: 'pets' };
-const AT_TABLE: readonly Kind[] = ['service', 'song', 'bottle'];
+const AT_TABLE: readonly Kind[] = ['service', 'bottle'];
 const SERVICE_REASONS = ['waiter', 'ice', 'glasses', 'cleanup', 'bill', 'other'];
 const PET_SERVICES = ['grooming', 'bath', 'daycare', 'boarding', 'visit', 'other'];
 const PET_SPECIES = ['dog', 'cat', 'other'];
@@ -65,12 +65,15 @@ async function detailFor(db: Db, kind: Kind, customerId: number, store: StoreRef
   }
 }
 
-/** A guest asks the staff for something: at a table (service, song, bottle) or at a location (support, pet care). */
+/**
+ * A guest asks the staff for something: at a table (service, bottle), at a location (support, pet care), or either (a song
+ * request from the table QR, or from the app's song page before the guest has sat down).
+ */
 export async function createRequest(db: Db, customerId: number, b: Record<string, unknown>): Promise<{ requestId: number }> {
   const kind = oneOf(b.kind, 'kind', [...KINDS]) as Kind;
   let store: StoreRef;
   let tableId: number | null = null;
-  if (AT_TABLE.includes(kind)) {
+  if (AT_TABLE.includes(kind) || (kind === 'song' && b.qrToken)) {
     const r = await tableByToken(db, String(b.qrToken ?? ''));
     store = r.store;
     tableId = r.table.id;
