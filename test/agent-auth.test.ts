@@ -7,6 +7,7 @@ import type { Server } from 'node:http';
 import { openDb } from '../src/db.ts';
 import type { Db } from '../src/db.ts';
 import { createApp } from '../src/app.ts';
+import { hashSessionToken } from '../src/auth.ts';
 import { seed } from '../src/seed.ts';
 
 const ADMIN_KEY = 'adm';
@@ -342,7 +343,7 @@ test('logout invalidates exactly that token, once', async () => {
 test('an expired session is refused', async () => {
   const t = await tokenOf('doloruu', 'flag.host', '1111');
   assert.equal((await call('GET', '/api/me', undefined, t)).status, 200);
-  await db.run('UPDATE sessions SET expires_at = ? WHERE token = ?', [Date.now() - 1, t]);
+  await db.run('UPDATE sessions SET expires_at = ? WHERE token = ?', [Date.now() - 1, hashSessionToken(t)]);
   assert.equal((await call('GET', '/api/me', undefined, t)).status, 401);
 });
 
@@ -1291,4 +1292,17 @@ test('rotating random bearer tokens shares one per-ip rate limit, while a real s
   const throttled = statuses.filter((s) => s === 429).length;
   const real = await limited.call('GET', '/api/tables', undefined, tok.cashier, attackerIp);
   assert.deepEqual([throttled >= 7, real.status], [true, 200]);
+});
+
+test('staff session tokens are stored hashed, never in plaintext', async () => {
+  const t = await tokenOf('doloruu', 'flag.host', '1111');
+  const plain = await db.one('SELECT 1 AS x FROM sessions WHERE token = ?', [t]);
+  const hashed = await db.one('SELECT 1 AS x FROM sessions WHERE token = ?', [hashSessionToken(t)]);
+  assert.deepEqual([plain, hashed?.x], [undefined, 1]);
+});
+
+test('a plaintext session row left by the old code does not authenticate', async () => {
+  const legacy = 'legacy-plaintext-token';
+  await db.run('INSERT INTO sessions (token, employee_id, store_id, expires_at) VALUES (?,?,?,?)', [legacy, 3, 1, Date.now() + 60_000]);
+  assert.equal((await call('GET', '/api/me', undefined, legacy)).status, 401);
 });

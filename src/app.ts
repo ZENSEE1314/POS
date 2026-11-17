@@ -5,7 +5,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import type { Db } from './db.ts';
 import { audit, DomainError } from './db.ts';
-import { actorFromToken, can, isLiveSession, login, require_, switchStore, whoOf } from './auth.ts';
+import { actorFromToken, can, hashSessionToken, isLiveSession, login, require_, switchStore, whoOf } from './auth.ts';
 import type { Actor } from './auth.ts';
 import { addLine, attachMember, getBill, listOpenTableless, openCounterSale, openTable, payrollSummary, setDiscount, settleIfPaid, transferTable, voidLine } from './bills.ts';
 import { businessOf, requireModule, updateBusiness } from './business.ts';
@@ -177,7 +177,7 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
 
   // ---- session ----
   route('POST', '/api/logout', true, async ({ db, token }) => {
-    await db.run('DELETE FROM sessions WHERE token = ?', [token]);
+    await db.run('DELETE FROM sessions WHERE token = ?', [hashSessionToken(token)]);
     return { ok: true };
   });
   route('GET', '/api/me', true, async ({ actor, db }) => ({

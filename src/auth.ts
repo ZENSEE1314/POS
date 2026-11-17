@@ -30,6 +30,9 @@ const PERMISSIONS: Record<Action, Role[]> = {
 };
 
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+
+/** Only the SHA-256 of a session token is stored (column sessions.token), so a database leak does not hand out live logins. */
+export const hashSessionToken = (token: string): string => createHash('sha256').update(token).digest('hex');
 const DUMMY_PIN_HASH = hashPin('timing-equaliser');
 
 export interface Actor { id: number; name: string; role: Role; tenantId: number; storeId: number }
@@ -73,7 +76,7 @@ export async function login(db: Db, company: string, username: string, pin: stri
     chosen = s.id;
   }
   const token = randomBytes(24).toString("hex");
-  await db.run("INSERT INTO sessions (token, employee_id, store_id, expires_at) VALUES (?,?,?,?)", [token, e.id, chosen, Date.now() + SESSION_TTL_MS]);
+  await db.run("INSERT INTO sessions (token, employee_id, store_id, expires_at) VALUES (?,?,?,?)", [hashSessionToken(token), e.id, chosen, Date.now() + SESSION_TTL_MS]);
   return { token, actor: { id: e.id, name: e.name, role: e.role, tenantId: e.tenant_id, storeId: chosen! } };
 }
 
@@ -81,7 +84,7 @@ export async function actorFromToken(db: Db, token: string | undefined): Promise
   if (!token) throw new DomainError('unauthenticated', 401);
   const r = await db.one(
     `SELECT e.id, e.name, e.role, e.tenant_id, s.store_id FROM sessions s JOIN employees e ON e.id = s.employee_id
-     JOIN tenants t ON t.id = e.tenant_id WHERE s.token = ? AND s.expires_at > ? AND e.active AND t.active`, [token, Date.now()]);
+     JOIN tenants t ON t.id = e.tenant_id WHERE s.token = ? AND s.expires_at > ? AND e.active AND t.active`, [hashSessionToken(token), Date.now()]);
   if (!r) throw new DomainError('unauthenticated', 401);
   return { id: r.id, name: r.name, role: r.role, tenantId: r.tenant_id, storeId: r.store_id };
 }
@@ -89,9 +92,9 @@ export async function actorFromToken(db: Db, token: string | undefined): Promise
 /** True when the bearer token is a live staff or guest session. Used to decide how to rate-limit a caller, never to authorise. */
 export async function isLiveSession(db: Db, token: string): Promise<boolean> {
   const now = Date.now();
-  const staff = await db.one('SELECT 1 AS x FROM sessions WHERE token = ? AND expires_at > ?', [token, now]);
+  const staff = await db.one('SELECT 1 AS x FROM sessions WHERE token = ? AND expires_at > ?', [hashSessionToken(token), now]);
   if (staff) return true;
-  const guest = await db.one('SELECT 1 AS x FROM guest_sessions WHERE token_hash = ? AND expires_at > ?', [createHash('sha256').update(token).digest('hex'), now]);
+  const guest = await db.one('SELECT 1 AS x FROM guest_sessions WHERE token_hash = ? AND expires_at > ?', [hashSessionToken(token), now]);
   return Boolean(guest);
 }
 
@@ -100,7 +103,7 @@ export async function switchStore(db: Db, token: string, actor: Actor, storeId: 
   if (!isTenantWide(actor.role)) throw new DomainError('this role is pinned to one store', 403);
   const s = await db.one('SELECT id FROM stores WHERE id = ? AND tenant_id = ? AND active', [storeId, actor.tenantId]);
   if (!s) throw new DomainError('store not found', 404);
-  await db.run('UPDATE sessions SET store_id = ? WHERE token = ?', [storeId, token]);
+  await db.run('UPDATE sessions SET store_id = ? WHERE token = ?', [storeId, hashSessionToken(token)]);
   return { ...actor, storeId };
 }
 

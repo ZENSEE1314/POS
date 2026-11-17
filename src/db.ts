@@ -473,6 +473,15 @@ const MIGRATIONS: Array<{ id: number; statements: string[] }> = [
       'CREATE INDEX IF NOT EXISTS broadcasts_tenant ON broadcasts (tenant_id, audience, expires_at)',
     ],
   },
+  {
+    // Staff session tokens are now stored as SHA-256 hashes. Rows written by the old code hold plaintext tokens that can no
+    // longer match anything, so drop them (those users sign in again) rather than leave live-looking secrets in the table.
+    id: 15,
+    statements: [
+      'DELETE FROM sessions',
+      'CREATE INDEX IF NOT EXISTS sessions_employee ON sessions (employee_id)',
+    ],
+  },
 ];
 
 async function migrate(db: Db): Promise<void> {
