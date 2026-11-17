@@ -1,4 +1,5 @@
 import { createSign, createVerify } from 'node:crypto';
+import { alipayTimeoutExpress } from './http.ts';
 import type { ChargeRequest, ChargeResult, GuestCharge, GuestChargeRequest, NotifyResult, PayProvider } from './types.ts';
 
 export interface AlipayConfig {
@@ -50,6 +51,7 @@ export class AlipayProvider implements PayProvider {
         out_trade_no: req.outTradeNo,
         total_amount: (req.amountFen / 100).toFixed(2),
         subject: req.subject,
+        timeout_express: alipayTimeoutExpress(),
       }),
     };
     params.sign = this.signParams(params);
@@ -74,6 +76,7 @@ export class AlipayProvider implements PayProvider {
         total_amount: (req.amountFen / 100).toFixed(2),
         subject: req.subject,
         product_code: 'QUICK_WAP_WAY',
+        timeout_express: alipayTimeoutExpress(),
       }),
     });
     params.sign = this.signParams(params);

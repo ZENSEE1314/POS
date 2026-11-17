@@ -5,11 +5,9 @@ import type { Actor } from './auth.ts';
 import { require_, whoOf } from './auth.ts';
 import { settleIfPaid, totals } from './bills.ts';
 import type { OnlineMethod, PayProvider } from './payments/types.ts';
+import { PENDING_HOLD_MS } from './payments/http.ts';
 import { logEvent } from './ops.ts';
 import { earnForPayment } from './guest/loyalty.ts';
-
-/** Matches the self-heal expiry of unpaid online payments. */
-const PENDING_HOLD_MS = 15 * 60 * 1000;
 
 async function lockOpenBill(t: Db, actor: Actor, billId: number): Promise<any> {
   const bill = await t.one('SELECT * FROM bills WHERE id = ? AND store_id = ? FOR UPDATE', [billId, actor.storeId]);

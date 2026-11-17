@@ -1,4 +1,5 @@
 import { createDecipheriv, createSign, createVerify, randomBytes } from 'node:crypto';
+import { wechatTimeExpire } from './http.ts';
 import type { ChargeRequest, ChargeResult, GuestCharge, GuestChargeRequest, NotifyResult, PayProvider } from './types.ts';
 
 export interface WechatConfig {
@@ -43,6 +44,7 @@ export class WechatProvider implements PayProvider {
       out_trade_no: req.outTradeNo,
       notify_url: req.notifyUrl,
       amount: { total: req.amountFen, currency: 'CNY' },
+      time_expire: wechatTimeExpire(),
       ...extra,
     });
     const res = await fetch((this.cfg.baseUrl ?? 'https://api.mch.weixin.qq.com') + path, {
