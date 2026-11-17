@@ -1,5 +1,5 @@
 import { createSign, createVerify } from 'node:crypto';
-import { alipayTimeoutExpress } from './http.ts';
+import { alipayTimeoutExpress, fetchWithTimeout } from './http.ts';
 import type { ChargeRequest, ChargeResult, GuestCharge, GuestChargeRequest, NotifyResult, PayProvider } from './types.ts';
 
 export interface AlipayConfig {
@@ -55,7 +55,7 @@ export class AlipayProvider implements PayProvider {
       }),
     };
     params.sign = this.signParams(params);
-    const res = await fetch(this.cfg.gateway ?? 'https://openapi.alipay.com/gateway.do', {
+    const res = await fetchWithTimeout(this.cfg.gateway ?? 'https://openapi.alipay.com/gateway.do', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8' },
       body: new URLSearchParams(params).toString(),
@@ -87,7 +87,7 @@ export class AlipayProvider implements PayProvider {
   async call(method: string, extra: Record<string, string>): Promise<any> {
     const params = this.commonParams(method, extra);
     params.sign = this.signParams(params);
-    const res = await fetch(this.gateway, {
+    const res = await fetchWithTimeout(this.gateway, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8' },
       body: new URLSearchParams(params).toString(),

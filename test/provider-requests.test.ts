@@ -4,6 +4,12 @@ import { generateKeyPairSync } from 'node:crypto';
 import { AlipayProvider } from '../src/payments/alipay.ts';
 import { WechatProvider } from '../src/payments/wechat.ts';
 import { PENDING_HOLD_MS } from '../src/payments/http.ts';
+import { MockProvider } from '../src/payments/mock.ts';
+import { addLine, openTable } from '../src/bills.ts';
+import { actorFromToken, login } from '../src/auth.ts';
+import { openDb } from '../src/db.ts';
+import { handleNotify, startOnlinePayment } from '../src/payments.ts';
+import { seed } from '../src/seed.ts';
 
 const merchant = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const privateKeyPem = merchant.privateKey.export({ type: 'pkcs8', format: 'pem' }) as string;
@@ -53,4 +59,37 @@ test('alipay wap pay carries timeout_express matching the pending hold', async (
   assert.equal(charge.kind, 'redirect');
   const url = new URL((charge as { url: string }).url);
   assert.equal(JSON.parse(url.searchParams.get('biz_content')!).timeout_express, `${PENDING_HOLD_MS / 60_000}m`);
+});
+
+test('every provider call carries an abort signal', async () => {
+  const calls = stubFetch({ code_url: 'weixin://x' });
+  await wechat().createCharge(CHARGE);
+  assert.ok(calls[0].init.signal instanceof AbortSignal);
+});
+
+test('a provider call that times out fails with a clear message', async () => {
+  globalThis.fetch = (async () => { throw new DOMException('The operation was aborted due to timeout', 'TimeoutError'); }) as typeof fetch;
+  await assert.rejects(wechat().createCharge(CHARGE), /timed out/);
+});
+
+test('a charge that timed out is marked failed, and a late paid notify still books it', async () => {
+  const db = await openDb();
+  await seed(db, {} as NodeJS.ProcessEnv);
+  const host = await actorFromToken(db, (await login(db, 'doloruu', 'flag.host', '1111')).token);
+  const cashier = await actorFromToken(db, (await login(db, 'doloruu', 'flag.cashier', '3333')).token);
+  const billId = await openTable(db, host, { tableId: 3, repId: 7 });
+  const waiter = await actorFromToken(db, (await login(db, 'doloruu', 'flag.waiter', '2222')).token);
+  await addLine(db, waiter, billId, { productId: 3, qty: 1 });
+  const mock = new MockProvider('wechat', 's3cret');
+  const hung = { method: 'wechat' as const, createGuestCharge: mock.createGuestCharge, parseNotify: mock.parseNotify.bind(mock),
+    createCharge: async () => { throw new Error('request timed out after 10s'); } };
+
+  await assert.rejects(startOnlinePayment(db, cashier, hung, 'http://x.test', billId), /timed out/);
+  const failed = (await db.one('SELECT id, status, out_trade_no, amount FROM payments WHERE bill_id = ?', [billId]))!;
+  const raw = JSON.stringify({ eventId: 'late-1', outTradeNo: failed.out_trade_no, amountFen: failed.amount, status: 'paid' });
+  await handleNotify(db, 'wechat', mock, { 'x-mock-signature': mock.sign(raw) }, raw);
+
+  const after = (await db.one('SELECT status FROM payments WHERE id = ?', [failed.id]))!.status;
+  assert.deepEqual([failed.status, after], ['failed', 'paid']);
+  await db.close();
 });

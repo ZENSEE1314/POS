@@ -1,4 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto';
+import { fetchWithTimeout } from '../payments/http.ts';
 
 /** Sends the one-time login code. `devCode` is only ever returned by the development sender. */
 export interface SmsSender {
@@ -45,7 +46,7 @@ export class AliyunSms implements SmsSender {
   }
 
   async sendCode(phone: string, code: string): Promise<void> {
-    const res = await fetch(`${this.cfg.endpoint ?? 'https://dysmsapi.aliyuncs.com'}/?${this.signedQuery(phone, code)}`);
+    const res = await fetchWithTimeout(`${this.cfg.endpoint ?? 'https://dysmsapi.aliyuncs.com'}/?${this.signedQuery(phone, code)}`);
     const json = (await res.json().catch(() => ({}))) as any;
     if (json.Code !== 'OK') throw new Error(`sms not sent: ${json.Code ?? res.status} ${json.Message ?? ''}`);
   }

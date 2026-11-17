@@ -1,5 +1,5 @@
 import { createDecipheriv, createSign, createVerify, randomBytes } from 'node:crypto';
-import { wechatTimeExpire } from './http.ts';
+import { fetchWithTimeout, wechatTimeExpire } from './http.ts';
 import type { ChargeRequest, ChargeResult, GuestCharge, GuestChargeRequest, NotifyResult, PayProvider } from './types.ts';
 
 export interface WechatConfig {
@@ -47,7 +47,7 @@ export class WechatProvider implements PayProvider {
       time_expire: wechatTimeExpire(),
       ...extra,
     });
-    const res = await fetch((this.cfg.baseUrl ?? 'https://api.mch.weixin.qq.com') + path, {
+    const res = await fetchWithTimeout((this.cfg.baseUrl ?? 'https://api.mch.weixin.qq.com') + path, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { AlipayProvider } from '../payments/alipay.ts';
+import { fetchWithTimeout } from '../payments/http.ts';
 
 export type LoginProvider = 'wechat' | 'alipay' | 'douyin';
 export const LOGIN_PROVIDERS: LoginProvider[] = ['wechat', 'alipay', 'douyin'];
@@ -24,7 +25,7 @@ const MAX_NAME = 40;
 const cleanName = (v: unknown): string => (typeof v === 'string' ? v.trim().slice(0, MAX_NAME) : '');
 
 async function getJson(url: string, init?: RequestInit): Promise<any> {
-  const res = await fetch(url, init);
+  const res = await fetchWithTimeout(url, init);
   const text = await res.text();
   try {
     return JSON.parse(text);
