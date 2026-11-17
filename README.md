@@ -29,6 +29,11 @@ Payments are enabled per provider when their credentials exist (cash, wallet and
 `ALIPAY_APP_ID, ALIPAY_PRIVATE_KEY, ALIPAY_PUBLIC_KEY` (PEM text, `\n` escapes allowed). Douyin: `DOUYIN_WEBHOOK_SECRET`.
 `PAY_MODE=mock` swaps in simulated providers: development only, never with real customers.
 
+**Fails closed in production.** With `NODE_ENV=production` (the Dockerfile sets it) the server refuses to start, and `seed()` refuses to run,
+when `PAY_MODE=mock`, `SEED_DEMO=1`, or `MOCK_PAY_SECRET=dev-mock-secret` (or unset while mock) is configured. The only override is
+`ALLOW_MOCK_IN_PROD=1`, meant for a throwaway demo deployment: never set it where real customers pay. Do not copy mock/demo settings
+(`PAY_MODE=mock`, `SEED_DEMO=1`) from a dev `.env` into a production service.
+
 ## Business types and modules
 Every company has a business type, picked at sign-up (`businessType` on `POST /api/signup` and `/platform/companies`) and
 changeable by the owner in **Admin > Business**. The type switches on a starting set of modules; each module can then be

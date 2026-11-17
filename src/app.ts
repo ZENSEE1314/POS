@@ -28,6 +28,7 @@ import { createPrinter, deletePrinter, listPrinters, updatePrinter } from './pri
 import { createCompany, listCompanies, recentOps, setCompanyActive } from './platform.ts';
 import { logEvent, Metrics, RateLimiter, selfHeal } from './ops.ts';
 import { buildAssetManifest } from './static-assets.ts';
+import { assertSafeForProduction } from './prod-guard.ts';
 import { syncOps } from './sync.ts';
 import { cleanPhone, normalizePhone } from './phone.ts';
 import { FileBody, HtmlPage, Redirect } from './responses.ts';
@@ -110,6 +111,7 @@ export function createApp(db: Db, env: NodeJS.ProcessEnv = process.env): Server 
 }
 
 export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.env): AppHandle {
+  assertSafeForProduction(env);
   const providers = buildProviders(env);
   const baseUrl = env.PUBLIC_BASE_URL ?? 'http://localhost:3500';
   const isMock = env.PAY_MODE === 'mock';

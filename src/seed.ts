@@ -1,6 +1,7 @@
 import type { Db } from './db.ts';
 import { openDb } from './db.ts';
 import { hashPin } from './auth.ts';
+import { assertSafeForProduction } from './prod-guard.ts';
 
 /** Demo data for local development only. The PINs below are dev placeholders: never reuse in production. */
 export const DEMO_COMPANY = 'doloruu';
@@ -24,7 +25,9 @@ const PRODUCTS: Array<[string, string, number, number]> = [
  * Creates one tenant with two stores. Employee ids are assigned per insert order:
  * 1 owner, 2 finance (tenant-wide), then per store: host, waiter, cashier, manager, sales rep.
  */
-export async function seed(db: Db): Promise<void> {
+export async function seed(db: Db, env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  // The demo company has published PINs; never let any caller plant it in a production database.
+  assertSafeForProduction({ ...env, SEED_DEMO: '1' });
   if ((await db.one('SELECT COUNT(*) AS c FROM tenants'))!.c > 0) return;
   await db.tx(async (t) => {
     const tenantId = await t.insert('INSERT INTO tenants (name, code, created_at) VALUES (?,?,?)', ['Doloruu Group', DEMO_COMPANY, Date.now()]);

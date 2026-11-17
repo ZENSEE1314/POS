@@ -2,6 +2,10 @@ import { openDb } from './db.ts';
 import { createAppWithMetrics } from './app.ts';
 import { seed } from './seed.ts';
 import { logEvent, startSelfHealLoop } from './ops.ts';
+import { assertSafeForProduction } from './prod-guard.ts';
+
+/** Fail closed before touching the database: mock payments / demo seed must never run as production. */
+assertSafeForProduction(process.env);
 
 const PORT = Number(process.env.PORT ?? 3500);
 const DATABASE_URL = process.env.DATABASE_URL ?? 'pglite:data/pglite';
