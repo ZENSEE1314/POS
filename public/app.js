@@ -286,7 +286,12 @@ async function boot() {
 
   try { Object.assign(app.config, await get('/api/config')); } catch (e) { notifyError(e); }
   loadToken();
-  if (!app.token) { showLogin(); return; }
+  if (!app.token) {
+    showLogin();
+    // "Free trial" on the sales website links here.
+    if (app.config.signupOpen && new URLSearchParams(location.search).has('signup')) openSignup();
+    return;
+  }
   try {
     await enterApp();
   } catch (e) {

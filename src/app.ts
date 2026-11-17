@@ -27,6 +27,7 @@ import {
 import { createPrinter, deletePrinter, listPrinters, updatePrinter } from './printers.ts';
 import { createCompany, listCompanies, recentOps, setCompanyActive } from './platform.ts';
 import { logEvent, Metrics, RateLimiter, selfHeal } from './ops.ts';
+import { createLead, listLeads, updateLead } from './leads.ts';
 import { buildAssetManifest } from './static-assets.ts';
 import { assertSafeForProduction } from './prod-guard.ts';
 import { syncOps } from './sync.ts';
@@ -51,6 +52,8 @@ const API_PER_MINUTE = 600;
 /** Whole-IP ceiling as a multiple of the per-caller limit: a venue's tablets share one NAT address, but rotating tokens must not escape. */
 const API_IP_LIMIT_FACTOR = 10;
 const SIGNUPS_PER_HOUR = 5;
+/** Sales-website forms per IP per hour: enough for a team sharing one office line, too few to flood the lead list. */
+const LEADS_PER_HOUR = 10;
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
@@ -127,6 +130,7 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
   const apiLimiter = new RateLimiter(Number(env.API_PER_MINUTE ?? API_PER_MINUTE), 60_000);
   const apiIpLimiter = new RateLimiter(Number(env.API_PER_MINUTE ?? API_PER_MINUTE) * API_IP_LIMIT_FACTOR, 60_000);
   const signupLimiter = new RateLimiter(SIGNUPS_PER_HOUR, 60 * 60_000);
+  const leadLimiter = new RateLimiter(LEADS_PER_HOUR, 60 * 60_000);
 
   // Every numeric input is an integer id, fen amount or epoch ms; anything else would reach SQL as NaN/1.5/1e30 and 500.
   const num = (v: unknown): number => {
@@ -174,6 +178,13 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
     const made = await createCompany(db, body, { requireAddress: true });
     await logEvent(db, 'info', 'company.signup', 'new company', { code: body.code });
     return made;
+  });
+
+  route('POST', '/api/leads', false, async ({ db, body, ip }) => {
+    if (!leadLimiter.allow(ip)) throw new DomainError('too many requests from this address, please call us instead', 429);
+    const id = await createLead(db, body, ip);
+    await logEvent(db, 'info', 'site.lead', 'new website lead', { id, kind: body.kind });
+    return { ok: true };
   });
 
   // ---- session ----
@@ -371,6 +382,11 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
   route('GET', '/platform/ops', false, ({ db, query }) => recentOps(db, num(query.get('limit') ?? 200), query.get('level') ?? undefined));
   route('GET', '/platform/metrics', false, () => metrics.snapshot());
   route('POST', '/platform/selfheal', false, ({ db }) => selfHeal(db));
+  route('GET', '/platform/leads', false, ({ db, query }) => listLeads(db, query.get('status') ?? undefined));
+  route('PATCH', '/platform/leads/:id', false, async ({ db, params, body }) => {
+    await updateLead(db, num(params[0]), body);
+    return { ok: true };
+  });
 
   registerStockRoutes(route, { num });
   registerPeopleRoutes(route, { num });
@@ -399,7 +415,8 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
   const serveStatic = (res: ServerResponse, pathname: string): void => {
     // Customer app: every /g/... address (venue, store, table QR) is the same single page; it routes itself.
     const isGuestPage = pathname === '/g' || pathname.startsWith('/g/');
-    const rel = isGuestPage ? 'guest/index.html' : normalize(pathname === '/' ? '/index.html' : pathname).replace(/^([/\\])+/, '');
+    const isSitePage = pathname === '/site' || pathname === '/site/';
+    const rel = isGuestPage ? 'guest/index.html' : isSitePage ? 'site/index.html' : normalize(pathname === '/' ? '/index.html' : pathname).replace(/^([/\\])+/, '');
     const file = join(PUBLIC_DIR, rel);
     if (!file.startsWith(PUBLIC_DIR) || !existsSync(file) || !statSync(file).isFile()) throw new DomainError('not found', 404);
     // The service worker carries the asset list and a content version, so any changed file changes sw.js and triggers an update.

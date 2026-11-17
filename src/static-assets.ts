@@ -8,6 +8,8 @@ export interface AssetManifest { version: string; files: string[] }
 const EXCLUDED = new Set(['sw.js']);
 /** The customer app is not part of the till's offline shell. */
 const GUEST_DIR = 'guest/';
+/** Nor is the public sales website. */
+const SITE_DIR = 'site/';
 const VERSION_CHARS = 12;
 
 let cache: { signature: string; manifest: AssetManifest } | undefined;
@@ -18,7 +20,7 @@ function walk(dir: string, root: string, out: Array<{ path: string; full: string
     const full = join(dir, entry.name);
     if (entry.isDirectory()) { walk(full, root, out); continue; }
     const path = relative(root, full).split(sep).join('/');
-    if (EXCLUDED.has(path) || path.startsWith(GUEST_DIR)) continue;
+    if (EXCLUDED.has(path) || path.startsWith(GUEST_DIR) || path.startsWith(SITE_DIR)) continue;
     const st = statSync(full);
     out.push({ path, full, stamp: `${path}:${st.size}:${st.mtimeMs}` });
   }

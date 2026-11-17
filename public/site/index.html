@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NightPOS 夜场收银 · 酒吧一体化经营系统</title>
+  <meta name="description" content="NightPOS：酒吧、清吧、Live House 的收银、订台、会员营销、存酒、库存、提成和员工办公一体化系统。断网也能收银。">
+  <meta name="theme-color" content="#0d0a1c">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%23f3b52f'/%3E%3Cpath d='M16 5l2.6 8.4L27 16l-8.4 2.6L16 27l-2.6-8.4L5 16l8.4-2.6z' fill='%23120e24'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/site/site.css">
+</head>
+<body>
+<header class="nav" id="top">
+  <a class="brand" href="#top" aria-label="NightPOS">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="16" fill="#f3b52f"/><path d="M16 5l2.6 8.4L27 16l-8.4 2.6L16 27l-2.6-8.4L5 16l8.4-2.6z" fill="#120e24"/></svg>
+    <span>NightPOS <small data-en="Nightlife POS">夜场收银</small></span>
+  </a>
+  <nav class="nav__links" aria-label="主菜单">
+    <a href="#pains" data-en="Problems">痛点</a>
+    <a href="#features" data-en="Features">功能</a>
+    <a href="#why" data-en="Why us">优势</a>
+    <a href="#how" data-en="Get started">上手</a>
+    <a href="#partner" data-en="Partners">渠道合作</a>
+    <a href="#faq" data-en="FAQ">常见问题</a>
+  </nav>
+  <div class="nav__actions">
+    <button type="button" class="lang" id="lang" aria-label="Switch language">EN</button>
+    <a class="btn btn--ghost" href="/" data-en="Staff login">员工登录</a>
+    <a class="btn btn--gold" href="/?signup=1" data-en="Free trial">免费试用</a>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="hero__copy">
+      <p class="eyebrow" data-en="For bars · lounges · live houses · clubs">酒吧 · 清吧 · Live House · 夜店</p>
+      <h1 data-en="Run the whole night from one screen.">一块屏幕，管好整晚生意。</h1>
+      <p class="lead" data-en="Bookings, tables, the bar ticket, stored bottles, members, Douyin vouchers, commission and staff pay, all in one system that keeps working when the internet drops.">订台、开台、出品、存酒、会员、抖音团购、提成和员工工资，全部在一套系统里完成。断网也能照常收银。</p>
+      <div class="hero__cta">
+        <a class="btn btn--gold btn--lg" href="/?signup=1" data-en="Open your venue free">免费开店试用</a>
+        <a class="btn btn--line btn--lg" href="#contact" data-en="Book a demo">预约演示</a>
+      </div>
+      <ul class="hero__facts">
+        <li><b>3</b><span data-en="minutes to open">分钟开店</span></li>
+        <li><b>0</b><span data-en="hardware lock-in">硬件绑定</span></li>
+        <li><b>24/7</b><span data-en="works offline">断网可用</span></li>
+      </ul>
+    </div>
+    <div class="hero__art" aria-hidden="true">
+      <div class="device device--tablet">
+        <div class="mock-head"><span data-en="Main hall · 1F">主厅 · 1F</span><span class="dot dot--ok"></span></div>
+        <div class="mock-floor">
+          <i class="t busy">A1<em>¥3,280</em></i><i class="t busy">A2<em>¥1,560</em></i><i class="t">A3</i><i class="t book">A5<em>21:30</em></i>
+          <i class="t">B1</i><i class="t busy">B2<em>¥8,800</em></i><i class="t busy">VIP1<em>¥12,600</em></i><i class="t book">VIP2<em>22:00</em></i>
+        </div>
+        <div class="mock-bar"><span data-en="Tonight">今晚营业额</span><b>¥26,240</b></div>
+      </div>
+      <div class="device device--phone">
+        <div class="mock-card">
+          <small data-en="Member">会员</small>
+          <b>2,480 <span data-en="pts">积分</span></b>
+          <div class="mock-progress"><i style="width:72%"></i></div>
+          <small data-en="520 pts to a free bottle">再 520 积分换一瓶香槟</small>
+        </div>
+        <div class="mock-grid"><i>🎵</i><i>🍾</i><i>🎡</i><i>🎟️</i></div>
+        <div class="mock-chat"><span data-en="What time do you close?">几点关门？</span><span class="me" data-en="We are open until 2 am.">我们营业到凌晨两点。</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="pains">
+    <h2 data-en="Five things that cost a bar money, and how NightPOS stops them">酒吧最常见的五个漏洞，NightPOS 怎么堵</h2>
+    <div class="pains">
+      <article class="pain"><h3 data-en="Hard to win guests, regulars drift away">获客难，老顾客流失</h3>
+        <p data-en="Every guest who scans a table code becomes a member: points, wallet, invite rewards, prize wheel and event bookings bring them back. Douyin group-buy vouchers are checked at the till.">顾客扫桌码即成为会员：积分、储值、邀请奖励、抽奖和活动预订，让人愿意再来。抖音团购券在收银台直接核销。</p></article>
+      <article class="pain"><h3 data-en="Lost orders and missing stored bottles">飞单、存酒丢失</h3>
+        <p data-en="Every order, void, gift and discount needs the right role and a reason, and is kept in the activity log. Stored bottles get a pick-up code and an expiry date.">每张单、每次退菜、赠送和打折都要相应权限并写明原因，全部记入操作日志。存酒有取酒码和到期日，谁取的一查便知。</p></article>
+      <article class="pain"><h3 data-en="Unclear money, the owner is guessing">账目不清，老板心里没底</h3>
+        <p data-en="Live sales by store, payment method and sales rep; shift close-out with cash counts; commission calculated automatically; every store on one owner dashboard.">按门店、支付方式、营销经理实时看营业额；交班对账；提成自动计算；多门店一个总部看板。</p></article>
+      <article class="pain"><h3 data-en="Slow drinks, unhappy guests">出品慢，顾客体验差</h3>
+        <p data-en="Guest orders from the table QR go straight to the bar or kitchen printer, split by station. Song requests and service calls reach staff instantly.">顾客扫码点单直接打印到吧台或厨房，按出品档口自动分单。点歌和呼叫服务实时送到员工。</p></article>
+      <article class="pain"><h3 data-en="Paper clock-ins and slow approvals">打卡、审批繁琐</h3>
+        <p data-en="One-tap clock in on the till, monthly pay (base + commission) worked out for you, and discount, expense and leave requests approved from the phone.">收银台一键打卡，底薪加提成自动算好；打折、报销、请假在手机上提交，店长一点就批。</p></article>
+    </div>
+  </section>
+
+  <section class="section" id="features">
+    <h2 data-en="Everything a night venue needs">夜场经营需要的，都在这里</h2>
+    <div class="pillars">
+      <article class="pillar">
+        <span class="pillar__n">01</span>
+        <h3 data-en="Win and keep guests">营销获客</h3>
+        <ul>
+          <li data-en="Customer app in WeChat or any browser, in your own colours">顾客端：微信或浏览器直接打开，使用你自己的品牌配色</li>
+          <li data-en="Points, wallet top-up, vouchers, rewards">积分、储值、优惠券、积分兑换</li>
+          <li data-en="Invite a friend, prize wheel, party games">邀请有礼、幸运大转盘、派对小游戏</li>
+          <li data-en="Online bookings and event tickets">在线订台、活动预订</li>
+          <li data-en="Douyin group-buy vouchers checked at the till">抖音团购券核销</li>
+          <li data-en="Auto-reply on your WeChat Official Account and in the app">公众号和顾客端 AI 自动回复</li>
+          <li data-en="Personal booking link and results for each sales rep">每位营销经理专属订台链接和业绩</li>
+        </ul>
+      </article>
+      <article class="pillar">
+        <span class="pillar__n">02</span>
+        <h3 data-en="Run the floor and the money">运营与数据</h3>
+        <ul>
+          <li data-en="Host desk: tonight's bookings, arrivals, seating, reps">咨客台：今晚订台、到店、带位、分配营销</li>
+          <li data-en="Floor plan, minimum spend, table transfer">台位图、最低消费、转台并台</li>
+          <li data-en="Cashier: WeChat Pay, Alipay, cash, wallet, credit">收银：微信、支付宝、现金、储值、挂账</li>
+          <li data-en="Bar and kitchen tickets by station">吧台、厨房分档口出品</li>
+          <li data-en="Stored bottles with pick-up codes">存酒取酒，取酒码核验</li>
+          <li data-en="Stock, suppliers, purchase orders">进销存：库存、供应商、采购入库</li>
+          <li data-en="Commission rules, shift close, reports">提成规则、交班对账、经营报表</li>
+        </ul>
+      </article>
+      <article class="pillar">
+        <span class="pillar__n">03</span>
+        <h3 data-en="Run the team">员工办公</h3>
+        <ul>
+          <li data-en="Clock in / out with one tap">一键上下班打卡</li>
+          <li data-en="Monthly pay: base pay + commission">月度工资：底薪 + 提成</li>
+          <li data-en="Approvals: discounts, expenses, leave, purchases">审批：打折、报销、请假、采购</li>
+          <li data-en="Staff handbook and training with read receipts">员工手册与培训，谁看过一目了然</li>
+          <li data-en="Announcements on every till">公告推送到每台收银机</li>
+          <li data-en="Roles and permissions per person">按岗位分配权限</li>
+          <li data-en="Full activity log">完整操作日志</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <section class="section" id="why">
+    <h2 data-en="Better than a traditional bar system">比传统酒吧系统强在哪</h2>
+    <div class="whys">
+      <article><h3 data-en="Keeps selling offline">断网照常收银</h3><p data-en="Open tables, add drinks and take cash with no internet. Everything syncs when it is back.">没网也能开台、点单、收现金，恢复网络后自动同步，不丢一单。</p></article>
+      <article><h3 data-en="No hardware lock-in">不绑定硬件</h3><p data-en="Use the phones, tablets and PCs you already have. Any receipt printer on the network works.">手机、平板、电脑、收银机都能用，普通网络小票打印机即可出品。</p></article>
+      <article><h3 data-en="AI auto-reply built in">内置 AI 自动回复</h3><p data-en="Answers address, hours, bookings and menus on WeChat and in the app, and hands anything else to staff.">在公众号和顾客端自动回答地址、营业时间、订台、菜单，答不了的转人工。</p></article>
+      <article><h3 data-en="One HQ for every store">多门店一个总部</h3><p data-en="Copy the menu to a new store, move staff, see every store's numbers together.">一键复制酒水单到新店、调配员工、所有门店数据汇总查看。</p></article>
+      <article><h3 data-en="Clear prices, no surprise fees">价格透明</h3><p data-en="One price per store with every module included. No per-device fee.">按门店收费，全部功能都包含，不按设备额外收费。</p></article>
+      <article><h3 data-en="Your data, separated and audited">数据隔离，全程留痕</h3><p data-en="Each company's data is separate; every sensitive action is logged with who and why.">每家公司数据独立隔离，所有敏感操作记录操作人和原因。</p></article>
+    </div>
+  </section>
+
+  <section class="section devices" id="devices">
+    <h2 data-en="On every screen in the venue">店里每块屏幕都能用</h2>
+    <ul class="devices__list">
+      <li><span>📱</span><b data-en="Phone">手机</b></li>
+      <li><span>📲</span><b data-en="Tablet / iPad">平板 / iPad</b></li>
+      <li><span>💻</span><b data-en="PC">电脑</b></li>
+      <li><span>🖨️</span><b data-en="POS + printer">收银机 + 打印机</b></li>
+      <li><span>🔳</span><b data-en="Table QR">桌码扫码</b></li>
+      <li><span>💬</span><b data-en="WeChat OA">公众号</b></li>
+    </ul>
+  </section>
+
+  <section class="section" id="how">
+    <h2 data-en="Open in an afternoon">一个下午就能开业</h2>
+    <ol class="steps">
+      <li><b data-en="Sign up">注册开店</b><span data-en="Name, address and owner PIN. Your customer app goes live at once.">填店名、地址和老板密码，顾客端立即上线。</span></li>
+      <li><b data-en="Add drinks and tables">录入酒水和台位</b><span data-en="Or let us import your price list for you.">也可以把价目表发给我们帮你导入。</span></li>
+      <li><b data-en="Print table codes">打印桌码</b><span data-en="Guests scan to order, call staff and request songs.">顾客扫码点单、呼叫服务、点歌。</span></li>
+      <li><b data-en="Open the doors">开门营业</b><span data-en="Staff sign in on any device. We help on your first night.">员工任意设备登录，首晚营业我们远程陪同。</span></li>
+    </ol>
+  </section>
+
+  <section class="section partner" id="partner">
+    <div>
+      <h2 data-en="Sell NightPOS in your city">成为 NightPOS 城市渠道商</h2>
+      <p data-en="You know the bars in your city; we give you the product, training, demo accounts and a recurring share of every venue you bring.">你熟悉本地酒吧，我们提供产品、培训、演示账号，你带来的每家门店都有持续分成。</p>
+      <ul class="ticks">
+        <li data-en="Recurring revenue share, paid monthly">按月结算的持续分成</li>
+        <li data-en="Your own demo venue and sales kit">专属演示门店和销售资料</li>
+        <li data-en="We handle setup and support">开店实施和售后由我们负责</li>
+      </ul>
+      <p class="muted" data-en="Recommending a single bar? Tell us below and get a reward once they open.">只是推荐一家酒吧？在下面填写，对方开业后你就能拿到推荐奖励。</p>
+    </div>
+    <a class="btn btn--gold btn--lg" href="#contact" data-kind="partner" data-en="Apply as a partner">申请成为渠道商</a>
+  </section>
+
+  <section class="section" id="faq">
+    <h2 data-en="Questions">常见问题</h2>
+    <div class="faq">
+      <details><summary data-en="Do I need to buy new hardware?">需要买新设备吗？</summary><p data-en="No. It runs in the browser on phones, tablets and PCs. For bar tickets, any network receipt printer works.">不需要。手机、平板、电脑的浏览器都能用。出品打印用普通网络小票打印机即可。</p></details>
+      <details><summary data-en="What happens if the internet goes down?">断网了怎么办？</summary><p data-en="The till keeps working: open tables, add items and take cash. It syncs when the connection returns.">收银照常：开台、点单、收现金都可以，网络恢复后自动同步。</p></details>
+      <details><summary data-en="Can guests pay with WeChat and Alipay?">顾客能用微信、支付宝付款吗？</summary><p data-en="Yes, at the till and from the table QR code, once your merchant account is connected.">可以，收银台和桌码都支持，接入你的商户号即可。</p></details>
+      <details><summary data-en="I have several stores. Does it work?">我有好几家店，能统一管理吗？</summary><p data-en="Yes. One company, many stores; the owner sees them all, store staff see their own store.">可以。一个公司多个门店，老板看全部，门店员工只看本店。</p></details>
+      <details><summary data-en="How much does it cost?">怎么收费？</summary><p data-en="Per store per month, all modules included. Leave your number and we will send a quote for your venue.">按门店按月收费，包含全部功能。留下电话，我们按你的门店情况报价。</p></details>
+    </div>
+  </section>
+
+  <section class="section contact" id="contact">
+    <div class="contact__intro">
+      <h2 data-en="Talk to us">联系我们</h2>
+      <p data-en="Leave your details and we will call you within one working day.">留下联系方式，我们会在一个工作日内联系你。</p>
+      <a class="btn btn--gold" href="/?signup=1" data-en="Or open your venue now, free">或者现在就免费开店</a>
+    </div>
+    <form class="form" id="lead-form" novalidate>
+      <fieldset class="kinds">
+        <legend class="sr" data-en="What do you need?">你需要什么？</legend>
+        <label><input type="radio" name="kind" value="demo" checked><span data-en="Demo">预约演示</span></label>
+        <label><input type="radio" name="kind" value="quote"><span data-en="Quote">报价咨询</span></label>
+        <label><input type="radio" name="kind" value="partner"><span data-en="Partner">渠道合作</span></label>
+        <label><input type="radio" name="kind" value="referral"><span data-en="Refer a bar">推荐有礼</span></label>
+      </fieldset>
+      <div class="row">
+        <label class="field"><span data-en="Your name">你的称呼</span><input name="name" required maxlength="80" autocomplete="name"></label>
+        <label class="field"><span data-en="Phone">手机号</span><input name="phone" required inputmode="tel" maxlength="20" autocomplete="tel"></label>
+      </div>
+      <div class="row">
+        <label class="field"><span data-en="WeChat ID (optional)">微信号（选填）</span><input name="wechat" maxlength="80"></label>
+        <label class="field"><span data-en="City">城市</span><input name="city" maxlength="80" autocomplete="address-level2"></label>
+      </div>
+      <div class="row">
+        <label class="field"><span data-en="Venue / company">店名 / 公司</span><input name="company" maxlength="80" autocomplete="organization"></label>
+        <label class="field"><span data-en="Type">业态</span>
+          <select name="venueType">
+            <option value="bar" data-en="Bar">酒吧</option><option value="club" data-en="Club">夜店</option>
+            <option value="livehouse">Live House</option><option value="ktv">KTV</option>
+            <option value="restaurant" data-en="Bar-restaurant">清吧 / 餐吧</option><option value="other" data-en="Other">其他</option>
+          </select></label>
+      </div>
+      <div class="row">
+        <label class="field"><span data-en="Number of stores">门店数量</span><input name="stores" type="number" min="0" max="999" value="1"></label>
+        <label class="field" data-only="referral"><span data-en="Your name or phone (referrer)">推荐人（你的姓名或电话）</span><input name="referrer" maxlength="80"></label>
+      </div>
+      <label class="field"><span data-en="Anything else?">还有什么想说的？</span><textarea name="message" rows="3" maxlength="500"></textarea></label>
+      <p class="form__msg" id="lead-msg" role="status" aria-live="polite"></p>
+      <button type="submit" class="btn btn--gold btn--block" data-en="Send">提交</button>
+    </form>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="brand"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="16" fill="#f3b52f"/><path d="M16 5l2.6 8.4L27 16l-8.4 2.6L16 27l-2.6-8.4L5 16l8.4-2.6z" fill="#120e24"/></svg><span>NightPOS</span></div>
+  <nav aria-label="页脚">
+    <a href="/" data-en="Staff login">员工登录</a>
+    <a href="/g/" data-en="Customer app">顾客端</a>
+    <a href="#contact" data-en="Contact">联系我们</a>
+  </nav>
+  <p class="muted">© <span id="year"></span> NightPOS</p>
+</footer>
+<script type="module" src="/site/site.js"></script>
+</body>
+</html>

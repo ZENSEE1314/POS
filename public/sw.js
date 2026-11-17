@@ -9,8 +9,8 @@ const PREFIX = 'nightpos-shell-';
 const CACHE = `${PREFIX}${BUILD ? BUILD.version : 'unversioned'}`;
 const SHELL_URL = '/';
 // Anything dynamic must always reach the server (and /healthz is the connectivity probe). The customer app (/g, /guest)
-// is a separate page: a staff device that opens a table QR must get it, not the till shell.
-const NEVER_CACHE = /^\/(api|platform|webhooks|dev|healthz|g|guest)(\/|$)/;
+// is a separate page: a staff device that opens a table QR must get it, not the till shell. So is the sales website (/site).
+const NEVER_CACHE = /^\/(api|platform|webhooks|dev|healthz|g|guest|site)(\/|$)/;
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
