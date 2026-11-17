@@ -4,6 +4,7 @@ import {
   allCustomers, approveJoin, assignCustomers, cancelRequest, createDepartment, createRequest, decideRequest, dormantCustomers,
   listApprovals, listDepartments, listJoins, myCustomers, myRequests, newDepartmentCode, rejectJoin, setStaffDepartment, updateDepartment,
 } from './office.ts';
+import { myToday, performance } from './workbench.ts';
 
 interface Ctx { db: Db; actor: Actor; params: string[]; body: any; query: URLSearchParams }
 type RouteFn = (method: string, path: string, auth: boolean, handler: (ctx: Ctx) => unknown) => void;
@@ -47,5 +48,8 @@ export function registerOfficeRoutes(route: RouteFn, { num }: { num: (v: unknown
   route('GET', '/api/customers/mine', true, ({ db, actor }) => myCustomers(db, actor));
   route('GET', '/api/customers/dormant', true, ({ db, actor, query }) => dormantCustomers(db, actor, Number(query.get('days') ?? 0)));
   route('GET', '/api/customers', true, ({ db, actor, query }) => allCustomers(db, actor, query.get('q') ?? ''));
+  route('GET', '/api/me/today', true, ({ db, actor }) => myToday(db, actor));
+  route('GET', '/api/performance', true, ({ db, actor, query }) =>
+    performance(db, actor, num(query.get('from') ?? 0), num(query.get('to') ?? Date.now() + 1), query.get('all') === '1'));
   route('POST', '/api/customers/assign', true, async ({ db, actor, body }) => ({ changed: await assignCustomers(db, actor, body) }));
 }

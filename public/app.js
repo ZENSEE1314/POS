@@ -18,6 +18,7 @@ import { mountCounter } from './counter.js';
 import { mountStock } from './stock.js';
 import { mountOffice, openJoinDialog } from './office.js';
 import { mountHostDesk } from './host-desk.js';
+import { mountHome } from './home.js';
 import { hasModule, BUSINESS_TYPES, BUSINESS_CHANGED } from './business.js';
 import { initOffline, syncPillHtml, mountSyncPill, openSyncPanel, syncState, syncNow, forgetEverything, offlineSignedIn } from './offline/index.js';
 import { openPrintDialog } from './print/dialog.js';
@@ -28,6 +29,7 @@ const COMPANY_KEY = 'nightpos.company';
 const SIGNUP_PIN_MIN = 6;
 // `module`: the tab only shows when the company has that module switched on.
 const TABS = [
+  { id: 'home', mount: mountHome },
   { id: 'floor', mount: mountFloor, module: 'tables' },
   { id: 'host', mount: mountHostDesk, perm: 'table.open', module: 'tables' },
   { id: 'counter', mount: mountCounter, perm: 'order.add', module: 'counter' },
@@ -226,6 +228,8 @@ function startOrderBadge() {
 async function enterApp() {
   resetFloorState();
   await loadSession();
+  // Staff with a comp allowance (签送额度) get the gift switch on bills, like managers.
+  void get('/api/comps/me').then((c) => { app.compsLeft = c.unlimited ? Infinity : c.left; }).catch(() => {});
   renderShell();
   void offlineSignedIn();
 }

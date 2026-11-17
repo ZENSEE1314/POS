@@ -15,6 +15,7 @@ import { registerPeopleRoutes } from './people-routes.ts';
 import { registerOfficeRoutes } from './office-routes.ts';
 import { requestJoin } from './office.ts';
 import { hostDesk, setTableLock } from './host-desk.ts';
+import { registerTakingsRoutes } from './takings-routes.ts';
 import { expireStash, lookupStash, retrieveWine, storeWine, transferStash } from './stash.ts';
 import { cancelBooking, confirmBooking, createBooking, ingestDouyinBooking, listBookings, liveVoucherVerifier, mockVoucherVerifier, redeemVoucher, verifyDouyinSignature } from './bookings.ts';
 import type { DouyinBookingEvent } from './bookings.ts';
@@ -405,6 +406,7 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
   registerStockRoutes(route, { num });
   registerPeopleRoutes(route, { num });
   registerOfficeRoutes(route, { num });
+  registerTakingsRoutes(route, { num });
 
   registerGuestRoutes(route, {
     db, payProviders: providers, baseUrl, isMock, num, sms: buildSms(env), smsPerHour: env.GUEST_SMS_PER_HOUR ? Number(env.GUEST_SMS_PER_HOUR) : undefined,

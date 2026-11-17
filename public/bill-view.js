@@ -43,7 +43,7 @@ function addPanel(S) {
     <div class="add-bar">
       <div class="field field--qty"><label for="qty">${t('floor.qty')}</label>
         <input id="qty" type="number" min="1" max="99" step="1" value="${S.qty}" data-action="setQty"></div>
-      ${can('order.gift') && html`<label class="check"><input type="checkbox" data-action="setGift" ${S.gift ? 'checked' : ''}><span>${t('floor.gift')}</span></label>`}
+      ${(can('order.gift') || (app.compsLeft ?? 0) > 0) && html`<label class="check"><input type="checkbox" data-action="setGift" ${S.gift ? 'checked' : ''}><span>${t('floor.gift')}</span></label>`}
       <div class="field field--grow"><label for="search">${t('floor.search')}</label>
         <input id="search" type="search" value="${S.query}" placeholder="${t('floor.searchPlaceholder')}" data-action="setQuery"></div>
     </div>

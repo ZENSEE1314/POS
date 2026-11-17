@@ -2,7 +2,7 @@
 // with their join codes, and handing customers to sales reps.
 import { t, tOr } from './i18n.js';
 import { get, post, patch, put, can } from './session.js';
-import { html, setHtml, fmtMoney, fmtDateTime, fmtDate } from './util.js';
+import { html, setHtml, fmtMoney, fmtDateTime, fmtDate, toDateInput, dayRange, toYuanInput } from './util.js';
 import { delegate, formDialog, confirmDialog, dataTable, badge, skeleton, toast, notifyError, pressed } from './ui.js';
 
 const REQUEST_KINDS = ['leave', 'missed_clock', 'expense', 'purchase', 'other', 'resign'];
@@ -17,6 +17,9 @@ const SECTIONS = [
   { id: 'joins', perm: 'admin.write' },
   { id: 'departments', perm: 'admin.write' },
   { id: 'assign', perm: 'admin.write' },
+  { id: 'performance', perm: 'audit.read' },
+  { id: 'comps', perm: 'admin.write' },
+  { id: 'tips', perm: 'audit.read' },
 ];
 
 let active = 'requests';
@@ -201,9 +204,66 @@ async function assign(el, form) {
       ] })}</form>`);
 }
 
+// ---------- performance, comp allowances, tips ----------
+
+const rangeForm = (from, to) => html`<form class="panel search-bar" data-form="range">
+  <div class="field"><label for="pf-from">${t('reports.from')}</label><input id="pf-from" name="from" type="date" value="${from}" required></div>
+  <div class="field"><label for="pf-to">${t('reports.to')}</label><input id="pf-to" name="to" type="date" value="${to}" required></div>
+  ${can('hq.read') ? html`<label class="check"><input type="checkbox" name="all"><span>${t('reports.allStores')}</span></label>` : ''}
+  <button type="submit" class="btn btn--primary">${t('common.refresh')}</button></form>`;
+
+function rangeOf(form) {
+  const from = form?.get('from') ?? toDateInput(Date.now());
+  const to = form?.get('to') ?? toDateInput(Date.now());
+  return { from, to, all: form?.get('all') === 'on', range: dayRange(from, to) };
+}
+
+async function performance(el, form) {
+  const r = rangeOf(form);
+  const p = await get(`/api/performance?from=${r.range.from}&to=${r.range.to}${r.all ? '&all=1' : ''}`);
+  const money = (k) => ({ label: t(`office.perf.${k}`), cell: (x) => fmtMoney(x[k]), num: true });
+  setHtml(el, html`${rangeForm(r.from, r.to)}
+    <div class="hd-summary"><span><b>${fmtMoney(p.total.sales)}</b> ${t('office.perf.sales')}</span><span><b>${p.total.tables}</b> ${t('office.perf.tables')}</span>
+      <span><b>${fmtMoney(p.total.commission)}</b> ${t('office.perf.commission')}</span><span><b>${fmtMoney(p.total.tips)}</b> ${t('office.perf.tips')}</span></div>
+    <div class="panel">${dataTable({ caption: t('office.perf.byDept'), empty: t('common.noData'), rows: p.departments, cols: [
+      { label: t('office.department'), cell: (d) => d.name ?? t('office.noDept') }, { label: t('office.perf.people'), cell: (d) => String(d.people), num: true },
+      money('sales'), { label: t('office.perf.tables'), cell: (d) => String(d.tables), num: true }, money('commission'), money('tips'),
+    ] })}</div>
+    <div class="panel">${dataTable({ caption: t('office.perf.ranking'), empty: t('common.noData'), rows: p.staff, cols: [
+      { label: '#', cell: (x) => String(p.staff.indexOf(x) + 1), num: true },
+      { label: t('office.who'), cell: (x) => html`<strong>${x.name}</strong><br><span class="muted">${x.departmentName ?? ''}</span>` },
+      money('sales'), { label: t('office.perf.tables'), cell: (x) => String(x.tables), num: true }, money('comps'), money('commission'), money('tips'),
+    ] })}</div>`);
+}
+
+async function comps(el) {
+  state.comps = await get('/api/comps');
+  setHtml(el, html`<p class="hint">${t('office.compsHint')}</p>
+    <div class="panel">${dataTable({ caption: t('office.comps'), empty: t('common.noData'), rows: state.comps, cols: [
+      { label: t('office.who'), cell: (c) => html`<strong>${c.name}</strong><br><span class="muted">${roleLabel(c.role)}</span>` },
+      { label: t('office.allowance'), cell: (c) => (c.unlimited ? t('office.unlimited') : fmtMoney(c.allowance)), num: true },
+      { label: t('office.usedMonth'), cell: (c) => fmtMoney(c.used), num: true },
+      { label: t('common.actions'), cell: (c) => (c.unlimited ? '' : html`<button type="button" class="btn btn--small btn--ghost" data-action="setAllowance" data-id="${c.employeeId}">${t('common.edit')}</button>`) },
+    ] })}</div>`);
+}
+
+async function tips(el, form) {
+  const r = rangeOf(form);
+  const rows = await get(`/api/tips?from=${r.range.from}&to=${r.range.to}`);
+  const total = rows.reduce((a, x) => a + x.amount, 0);
+  setHtml(el, html`${rangeForm(r.from, r.to)}
+    <div class="panel">${dataTable({ caption: t('office.tips'), empty: t('common.noData'), rows, cols: [
+      { label: t('reports.time'), cell: (x) => fmtDateTime(x.createdAt) },
+      { label: t('office.who'), cell: (x) => html`<strong>${x.employeeName}</strong><br><span class="muted">${t(`home.kind.${x.kind}`)}</span>` },
+      { label: t('home.table'), cell: (x) => x.tableName ?? '—' },
+      { label: t('home.method'), cell: (x) => html`${t(`home.method.${x.method}`)}<br><span class="muted">${x.byName}</span>` },
+      { label: t('home.amount'), cell: (x) => fmtMoney(x.amount), num: true },
+    ], foot: rows.length ? [t('reports.total'), '', '', '', fmtMoney(total)] : null })}</div>`);
+}
+
 // ---------- mount ----------
 
-const loaders = { requests, customers, approvals, joins, departments, assign };
+const loaders = { requests, customers, approvals, joins, departments, assign, performance, comps, tips };
 
 export function mountOffice(root) {
   const sections = SECTIONS.filter((s) => !s.perm || can(s.perm));
@@ -268,6 +328,17 @@ export function mountOffice(root) {
         toast(t('office.newCodeDone', { code: joinCode }), 'success');
         await reload();
       },
+      setAllowance: (el) => {
+        const c = state.comps.find((x) => x.employeeId === Number(el.dataset.id));
+        return formDialog({
+          title: t('office.allowanceFor', { name: c.name }), intro: t('office.allowanceIntro'),
+          fields: [{ name: 'allowance', label: t('office.allowance'), type: 'money', required: true, value: toYuanInput(c.allowance) }],
+          onSubmit: async (v) => {
+            await put(`/api/comps/${c.employeeId}`, { allowance: v.allowance ?? 0 });
+            await reload();
+          },
+        });
+      },
       moveStaff: (el) => {
         const s = byId(state.staff, el);
         return formDialog({
@@ -282,6 +353,7 @@ export function mountOffice(root) {
       },
     },
     submit: {
+      range: (form) => load(new FormData(form)),
       search: (form) => load(new FormData(form)),
       assign: async (form) => {
         const memberIds = [...form.querySelectorAll('input[name=memberId]:checked')].map((c) => Number(c.value));

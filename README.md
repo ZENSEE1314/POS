@@ -8,7 +8,7 @@ WeChat Pay, Alipay and Douyin (抖音来客) integrations; Postgres; self-monito
 ```bash
 npm install
 node scripts/dev.ts          # http://localhost:3500: simulated payments + demo company (dev only)
-npm test                     # 700 tests on embedded Postgres (PGlite); on a low-memory machine use --test-concurrency=1
+npm test                     # 754 tests on embedded Postgres (PGlite); on a low-memory machine use --test-concurrency=1
 node scripts/test-pg.ts      # same suite through the production `pg` driver over the Postgres wire protocol
 node scripts/simulate.ts http://localhost:3500 dev-admin-key 4 25   # multi-company load simulation + books audit
 ```
@@ -176,6 +176,19 @@ http://127.0.0.1; use Chrome or Edge (details in `bridge/README.md`). Pending ti
 - **Salary**: Reports > Salary (finance and owner only) per month: set each person's pay (hourly or monthly), and see hours, base pay, commission and total.
 - **Broadcast**: Admin > Broadcast sends a message to staff (a banner on every till) or to customers (news on the company's customer page) for 1 to 90 days.
 - **Activity log**: Reports > Activity log shows who did what and when, filterable by date, type and staff member.
+
+## Staff home, host desk and office
+- **Home** (首页, the first tab for everyone): today's numbers for the person signed in (sales on settled bills they were the rep on, commission, tables, tips, bookings, comps; the day starts at 6 am) and big tiles for every job their role may do: order, host desk, comp, deposits, tip / reward, clock in/out, business analysis, bookings, voucher check, guest orders and songs, stored bottles, office, my customers, members, approvals.
+- **Host desk** (咨客台): every table as a card. Open tables show time opened, spend, the sales rep and their department, the guest (phone masked) and what is still short of the minimum spend (低差). Tonight's bookings show on their table; bookings without a table are listed on top. A free table can be **held** for a guest on the way (锁台): nobody can open it until it is released or the guest is seated from the booking made for that table. Sort by table, spend, shortfall or time; filter by area; refreshes every 20 s.
+- **Office** (办公):
+  - *My requests*: leave, missed clock-in, expense, purchase, other, leaving the job. *Approvals* (manager, owner): an approved missed clock-in becomes a shift in attendance; an approved resignation signs the person out, stops their sign-in and gives their customers back to the venue. Nobody decides their own request.
+  - *Departments* (manager, owner): each has a 6-character **join code**. New staff tap "New staff? Join with a code" on the sign-in screen, choose their own username and PIN, and can sign in once a manager approves them in *New staff* (a manager can approve host, waiter or cashier; only the owner approves a new manager). "New code" makes the old code stop working at once.
+  - *My customers*: the sales rep on a table becomes the owner of that customer the first time. Dormant customers (not back in 14 / 30 / 60 / 90 days) for calling back. *Assign customers* (manager, owner) moves customers between reps or back to the venue.
+  - *Performance* (manager, finance, owner): sales, tables, comps, commission and tips by department and a staff ranking for any dates. *Comp allowances* (manager, owner): how much each person may give away per month at menu price (签送额度) without asking; managers comp freely. *Tips*: every tip and reward with table, method and who recorded it.
+- **Tips and rewards** (小费 / 打赏) go to the person named and are not sales. **Deposits** (预收款 / 押金) are taken before or on arrival, then put toward the open bill on their table (paid as method `deposit`; anything left stays held) or handed back with a reason.
+
+## Sales website
+`/site` is the public sales page for NightPOS (Chinese with an English switch): the problems it solves, features, devices, getting started, reseller programme, FAQ, and a form for demo, quote, partner and referral requests. Requests are stored in `site_leads` (10 per address per hour) and the operator reads them with `GET /platform/leads?status=new|contacted|won|lost` and updates them with `PATCH /platform/leads/:id {status, note}`. "Free trial" opens the sign-up form at `/?signup=1` when `SIGNUP_OPEN=1`.
 
 ## Model
 Tenant (company) → stores. Tables, products, stock, stash, bookings, bills and commission rules are per store; member wallets are company-wide.

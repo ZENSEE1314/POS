@@ -7,6 +7,7 @@ import { hasModule, requireModule } from './business.ts';
 import { linePrice, priceFor } from './pricing.ts';
 import { claimCustomer } from './office.ts';
 import { releaseLockForOpen } from './host-desk.ts';
+import { assertCompAllowed, assertMayComp } from './comps.ts';
 
 export interface BillTotals {
   subtotal: number;      // active sale lines
@@ -128,7 +129,7 @@ export async function addLine(db: Db, actor: Actor, billId: number, input: LineI
   if (!isId(input.productId)) throw new DomainError('productId is required', 422);
   if (input.weightG != null && (!Number.isInteger(input.weightG) || input.weightG <= 0 || input.weightG > MAX_WEIGHT_G)) throw new DomainError(`weightG must be whole grams from 1 to ${MAX_WEIGHT_G}`, 422);
   if (input.gift) {
-    require_(actor, 'order.gift');
+    await assertMayComp(db, actor);
     if (!input.reason) throw new DomainError('gift requires a reason', 422);
   }
   return db.tx(async (t) => {
@@ -142,6 +143,8 @@ export async function addLine(db: Db, actor: Actor, billId: number, input: LineI
     if (labelPrice != null) price = { unitPrice: labelPrice, note: 'label' };
     else if (!input.gift) price = await priceFor(t, p, bill.member_id != null);
     const unitPrice = weighed && labelPrice == null ? linePrice(price.unitPrice, input.weightG!) : price.unitPrice;
+    // Managers comp freely; other staff spend their monthly comp allowance (签送额度).
+    if (input.gift) await assertCompAllowed(t, actor, unitPrice * input.qty);
     const lineId = await t.insert(
       `INSERT INTO bill_lines (bill_id, product_id, name, qty, unit_price, kind, reason, waiter_id, created_at, weight_g, price_note)
        VALUES (?,?,?,?,?,?,?,?,?,?,?)`,

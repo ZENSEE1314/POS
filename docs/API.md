@@ -11,6 +11,7 @@ Roles: `host`, `waiter`, `cashier`, `manager`, `finance`, `owner`. `owner` and `
 | `GET /healthz` | `{ok, mode}` |
 | `GET /api/config` | `{mock, signupOpen, payments:{wechat,alipay}}` (which online methods are configured) |
 | `POST /api/login` | `{company, username, pin, storeId?}` -> `{token, actor:{id,name,role,tenantId,storeId}}` |
+| `POST /api/leads` | `{kind: demo, quote, partner or referral; name, phone, wechat?, company?, city?, venueType?, stores?, referrer?, message?}` (sales website; 10 per address per hour) |
 | `POST /api/signup` | `{name, code, storeName, ownerName, ownerUsername, ownerPin, address, city, postalCode}` (only if `signupOpen`; the address fields are required) |
 
 ## Session
@@ -85,12 +86,24 @@ Webhook `POST /webhooks/douyin` (HMAC `x-douyin-signature`), `POST /webhooks/wec
 - `GET /api/salary?from&to[&all=1]` (finance, owner): per staff member base pay (finished hours x hourly rate, or the monthly salary once; the till asks for one calendar month) + commission = total · `PUT /api/staff-pay/:employeeId {kind: hourly|monthly, rate}` (finance, owner; rate in fen)
 - `GET /api/broadcasts` · `POST /api/broadcasts {audience: staff|guests, title, body?, days?: 1-90}` · `POST /api/broadcasts/:id/stop` (manager, owner; a store manager's message is for their store, the owner's for every store) · `GET /api/news` (every staff member: live staff messages). Live guest messages appear as `news` in `GET /api/guest/venue/:company`.
 
+## Staff home, host desk, office
+- `GET /api/me/today` (everyone): `{from, sales, tables, openTables, commission, tips, bookings, comps:{unlimited, allowance, used, left}}` for the business day (from 6 am)
+- `GET /api/host-desk` (host, waiter, cashier, manager, owner): `{tables:[{id, name, zone, minSpend, state: open|free|booked|locked, lock, bill:{openedAt, spent, shortfall, repName, departmentName, guestName, guestPhone (masked)}, bookings}], unassigned, summary}` · `POST /api/tables/:id/lock {locked, note?}` (host, cashier, manager, owner; not while in use). Opening a locked table is a 409 unless it comes from a booking for that table, which lifts the lock.
+- `POST /api/join {company, joinCode, name, phone, username, pin}` (public, 5 per address per hour) · `GET /api/joins` · `POST /api/joins/:id/approve {role?}` · `POST /api/joins/:id/reject` (manager, owner; only the owner approves a manager)
+- `GET /api/departments` (join codes only for manager, owner) · `POST /api/departments {name, defaultRole, storeId?}` · `PATCH /api/departments/:id {name, defaultRole, active}` · `POST /api/departments/:id/code` (new join code) · `PUT /api/staff/:id/department {departmentId|null}`
+- `GET /api/requests/mine` · `POST /api/requests {kind: leave|missed_clock|expense|purchase|resign|other, detail, amount?, startAt?, endAt?}` · `POST /api/requests/:id/cancel` · `GET /api/approvals[?status=done]` · `POST /api/approvals/:id {approve, note?}` (manager, owner; never your own)
+- `GET /api/customers/mine` · `GET /api/customers/dormant?days=` (your own; managers see all) · `GET /api/customers?q=` · `POST /api/customers/assign {memberIds, ownerId|null}` (manager, owner)
+- `GET /api/performance?from&to[&all=1]` (manager, finance, owner): `{total, departments, staff}` from settled bills, commission entries and tips
+- `GET /api/comps/me` · `GET /api/comps` · `PUT /api/comps/:employeeId {allowance}` (manager, owner; fen per month). A gift line from someone without `order.gift` must fit in what is left of their allowance this month.
+- `POST /api/tips {employeeId, amount, method, kind: tip|reward, tableId?, note?}` · `GET /api/tips?from&to` (manager, finance, owner)
+- `POST /api/deposits {name?, phone?, amount, method, tableId?, note?}` · `GET /api/deposits[?status=closed]` · `POST /api/deposits/:id/apply {billId?}` (to the open bill on its table by default; the rest stays held) · `POST /api/deposits/:id/refund {reason}` (cashier, manager, owner)
+
 ## Staff and head office
 - `GET /api/staff` (manager, owner) · `PATCH /api/staff/:id {active?, pin?, name?, role?}` (owner)
 - `GET /api/hq/stores` (owner, finance) · `POST /api/hq/stores {name, code, city?, address?, postalCode?, douyinPoiId?, copyCatalogFrom?}` (owner) · `POST /api/hq/staff {name, username, role, pin, storeId?}` (owner) · `POST /api/hq/catalog/copy {fromStoreId, toStoreIds}` (owner) · `GET /api/hq/summary?from&to` (owner, finance)
 
 ## Platform operator (header `x-admin-key: $PLATFORM_ADMIN_KEY`, disabled if unset)
-`GET/POST /platform/companies` · `GET /platform/ops?level=&limit=` (warn/error events) · `GET /platform/metrics` · `POST /platform/selfheal` (run invariant checks + safe repairs)
+`GET/POST /platform/companies` · `GET /platform/leads?status=` · `PATCH /platform/leads/:id {status, note}` (sales-website requests) · `GET /platform/ops?level=&limit=` (warn/error events) · `GET /platform/metrics` · `POST /platform/selfheal` (run invariant checks + safe repairs)
 
 ## Customer app (`/api/guest/*`)
 Guest tokens are separate from staff tokens (`Authorization: Bearer <guest token>`, 30 days). Public routes need no token.
