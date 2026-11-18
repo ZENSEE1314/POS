@@ -9,10 +9,13 @@ const MAX_TEXT_LENGTH = 200;
 
 export function listStores(db: Db, actor: Actor) {
   require_(actor, 'hq.read');
-  return db.all('SELECT id, name, code, douyin_poi_id AS "douyinPoiId", active, city, address, postal_code AS "postalCode" FROM stores WHERE tenant_id = ? ORDER BY id', [actor.tenantId]);
+  return db.all(`SELECT id, name, code, douyin_poi_id AS "douyinPoiId", active, city, address, postal_code AS "postalCode",
+    wifi_ssid AS "wifiSsid", wifi_password AS "wifiPassword" FROM stores WHERE tenant_id = ? ORDER BY id`, [actor.tenantId]);
 }
 
 const MAX_CITY = 40;
+/** WiFi network names are at most 32 bytes; passwords at most 63 characters. */
+const MAX_WIFI = 63;
 const placeText = (v: unknown, name: string, max: number): string => {
   if (v == null) return '';
   if (typeof v !== 'string' || v.trim().length > max) throw new DomainError(`${name}: up to ${max} characters`, 422);
@@ -37,12 +40,18 @@ export function placeOf(input: { city?: unknown; address?: unknown; postalCode?:
 }
 
 /** City, street address and postal code, shown to guests in the customer app (search, home page and map link). */
-export async function updateStoreLocation(db: Db, actor: Actor, storeId: number, input: { city?: unknown; address?: unknown; postalCode?: unknown }): Promise<void> {
+export async function updateStoreLocation(db: Db, actor: Actor, storeId: number,
+  input: { city?: unknown; address?: unknown; postalCode?: unknown; wifiSsid?: unknown; wifiPassword?: unknown }): Promise<void> {
   require_(actor, 'hq.write');
   const { city, address, postalCode } = placeOf(input);
-  const found = await db.one('UPDATE stores SET city = ?, address = ?, postal_code = ? WHERE id = ? AND tenant_id = ? RETURNING id', [city, address, postalCode, storeId, actor.tenantId]);
-  if (!found) throw new DomainError('store not found', 404);
-  await audit(db, whoOf(actor), 'store.location', 'store', storeId, { city, address, postalCode });
+  const old = await db.one('SELECT wifi_ssid, wifi_password FROM stores WHERE id = ? AND tenant_id = ?', [storeId, actor.tenantId]);
+  if (!old) throw new DomainError('store not found', 404);
+  // Left out = unchanged, so older clients that only send the address do not wipe the WiFi.
+  const wifiSsid = input.wifiSsid === undefined ? old.wifi_ssid : placeText(input.wifiSsid, 'WiFi name', MAX_WIFI);
+  const wifiPassword = input.wifiPassword === undefined ? old.wifi_password : placeText(input.wifiPassword, 'WiFi password', MAX_WIFI);
+  await db.run('UPDATE stores SET city = ?, address = ?, postal_code = ?, wifi_ssid = ?, wifi_password = ? WHERE id = ?',
+    [city, address, postalCode, wifiSsid, wifiPassword, storeId]);
+  await audit(db, whoOf(actor), 'store.location', 'store', storeId, { city, address, postalCode, wifiSsid });
 }
 
 export async function createStore(db: Db, actor: Actor, input: { name: string; code: string; douyinPoiId?: string; copyCatalogFrom?: number; city?: unknown; address?: unknown; postalCode?: unknown }): Promise<number> {

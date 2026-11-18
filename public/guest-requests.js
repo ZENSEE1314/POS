@@ -5,7 +5,7 @@ import { html, fmtDate, fmtDateTime } from './util.js';
 import { formDialog, emptyState, badge, toast } from './ui.js';
 
 const MILLI_PER_BOTTLE = 1000;
-const KIND_TONE = { service: 'warning', song: 'busy', bottle: 'success', support: 'neutral', pet: 'free' };
+const KIND_TONE = { service: 'warning', song: 'busy', bottle: 'success', stash_in: 'success', support: 'neutral', pet: 'free' };
 const STATUS_TONE = { pending: 'warning', done: 'success', declined: 'danger', cancelled: 'neutral' };
 export const REQUEST_STATUSES = ['pending', 'done', 'declined'];
 
@@ -15,6 +15,8 @@ function detailHtml(r) {
     case 'service': return html`<p><strong>${t(`gr.reason.${d.reason}`)}</strong>${d.note && html` · ${d.note}`}</p>`;
     case 'song': return html`<p><strong>“${d.title}”</strong>${d.artist && html` · ${d.artist}`}</p>${d.note && html`<p class="muted">${d.note}</p>`}`;
     case 'bottle': return html`<p><strong>${t('gr.bottle', { name: d.name, code: d.code, left: (d.leftMilli / MILLI_PER_BOTTLE).toFixed(2) })}</strong></p>${d.note && html`<p class="muted">${d.note}</p>`}`;
+    case 'stash_in': return html`<p><strong>${t('gr.stashIn', { name: d.name, left: t(`gr.left.${d.left}`), phone: d.phone })}</strong></p>
+      <p class="muted">${t('gr.stashInHint')}</p>${d.note && html`<p class="muted">${d.note}</p>`}`;
     case 'support': return html`<p class="guest-order__note">${d.message}</p>`;
     case 'pet': return html`<p><strong>${d.pet.name}</strong> (${t(`gr.species.${d.pet.species}`)}${d.pet.breed ? ` · ${d.pet.breed}` : ''}) · ${t(`gr.pet.${d.service}`)}</p>
       <p>${t('gr.when', { when: fmtDateTime(d.when) })}</p>${d.pet.notes && html`<p class="muted">${t('gr.notes', { notes: d.pet.notes })}</p>`}${d.note && html`<p class="muted">${d.note}</p>`}`;

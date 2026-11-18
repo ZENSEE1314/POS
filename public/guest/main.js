@@ -16,7 +16,7 @@ import { mountBooking } from './account.js';
 import { captureReferral, claimPendingReferral, mountEvents, mountInvite, mountPets, mountRewards, mountSpin, mountSupport } from './extras.js';
 import { mountGames } from './games.js';
 import { mountShopOrder } from './shop.js';
-import { mountActivity, mountDashboard, mountHistory, mountMe, mountSongs, mountWallet, pickedStore, rememberStore } from './dashboard.js';
+import { mountActivity, mountBottles, mountDashboard, mountHistory, mountMe, mountSongs, mountWallet, pickedStore, rememberStore } from './dashboard.js';
 import { applyTheme } from './themes.js';
 import { icon } from './icons.js';
 
@@ -29,6 +29,7 @@ const EXTRAS = {
   orders: (root, ctx) => mountHistory(root, ctx),
   activity: (root, ctx) => mountActivity(root, ctx),
   songs: (root, ctx) => mountSongs(root, ctx),
+  bottles: (root, ctx) => mountBottles(root, ctx),
   invite: (root, ctx) => mountInvite(root, ctx),
   rewards: (root, ctx) => mountRewards(root, ctx),
   spin: (root, ctx) => mountSpin(root, ctx),

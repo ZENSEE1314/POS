@@ -70,12 +70,14 @@ export async function mountTable(root, { token, onTitle }) {
     return () => {};
   }
   onTitle?.({ title: info.store.name, subtitle: info.company.name, company: info.company.code, theme: info.theme });
-  rememberTable(info.company.code, token, info.table.name);
+  rememberTable(info.company.code, token, info.table.name, info.store.code);
   const menu = await get(`/api/guest/venue/${encodeURIComponent(info.company.code)}/${encodeURIComponent(info.store.code)}/menu`);
   const products = new Map(menu.products.map((p) => [p.id, p]));
   const cartKey = `${CART_PREFIX}${token}`;
   const features = info.features ?? {};
-  const state = { tab: 'menu', category: '', cart: loadCart(cartKey, products), orders: [], requests: [], bill: undefined, timer: null, alive: true, barShown: false, justPaid: false };
+  // "Pay my table" on the home page links here with ?tab=bill.
+  const firstTab = new URLSearchParams(location.search).get('tab');
+  const state = { tab: ['menu', 'orders', 'bill', 'more'].includes(firstTab) ? firstTab : 'menu', category: '', cart: loadCart(cartKey, products), orders: [], requests: [], bill: undefined, timer: null, alive: true, barShown: false, justPaid: false };
 
   const saveCart = () => {
     try { sessionStorage.setItem(cartKey, JSON.stringify([...state.cart])); } catch { /* blocked storage: cart lives in memory */ }
@@ -247,8 +249,8 @@ export async function mountTable(root, { token, onTitle }) {
 const LAST_TABLE_KEY = 'nightpos.lastTable';
 
 /** The table QR the guest scanned last in this tab, so a song request from the app's song page reaches that table. */
-function rememberTable(company, token, tableName) {
-  writeSession(LAST_TABLE_KEY, JSON.stringify({ company, token, tableName }));
+function rememberTable(company, token, tableName, storeCode) {
+  writeSession(LAST_TABLE_KEY, JSON.stringify({ company, token, tableName, storeCode }));
 }
 
 export function lastTable(company) {

@@ -174,9 +174,11 @@ export function guestAdminSections(reload) {
           { name: 'city', label: t('loc.city'), value: x.city },
           { name: 'address', label: t('loc.address'), value: x.address },
           { name: 'postalCode', label: t('loc.postal'), value: x.postalCode },
+          { name: 'wifiSsid', label: t('loc.wifi'), value: x.wifiSsid, hint: t('loc.wifiHint') },
+          { name: 'wifiPassword', label: t('loc.wifiPassword'), value: x.wifiPassword },
         ],
         onSubmit: async (v) => {
-          await patch(`/api/hq/stores/${x.id}/location`, { city: v.city ?? '', address: v.address ?? '', postalCode: v.postalCode ?? '' });
+          await patch(`/api/hq/stores/${x.id}/location`, { city: v.city ?? '', address: v.address ?? '', postalCode: v.postalCode ?? '', wifiSsid: v.wifiSsid ?? '', wifiPassword: v.wifiPassword ?? '' });
           await reload();
         },
       }),

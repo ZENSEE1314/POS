@@ -8,9 +8,11 @@ import type { StoreRef } from './venue.ts';
 import { int, storeByCode, tableByToken, tenantByCode, text } from './venue.ts';
 import { botAnswer, botEnabled, recordQuestion } from './bot.ts';
 
-const KINDS = ['service', 'song', 'bottle', 'support', 'pet'] as const;
+const KINDS = ['service', 'song', 'bottle', 'stash_in', 'support', 'pet'] as const;
 type Kind = typeof KINDS[number];
-const FEATURE_OF: Record<Kind, Feature> = { service: 'service', song: 'song', bottle: 'bottle', support: 'support', pet: 'pets' };
+const FEATURE_OF: Record<Kind, Feature> = { service: 'service', song: 'song', bottle: 'bottle', stash_in: 'bottle', support: 'support', pet: 'pets' };
+/** How much is left in a bottle a guest asks staff to keep (自助存酒); staff measure it properly when they store it. */
+const BOTTLE_LEFT = ['full', 'most', 'half', 'little'];
 const AT_TABLE: readonly Kind[] = ['service', 'bottle'];
 const SERVICE_REASONS = ['waiter', 'ice', 'glasses', 'cleanup', 'bill', 'other'];
 const PET_SERVICES = ['grooming', 'bath', 'daycare', 'boarding', 'visit', 'other'];
@@ -53,6 +55,11 @@ async function detailFor(db: Db, kind: Kind, customerId: number, store: StoreRef
       if (!x) throw new DomainError('that bottle is not stored at this location', 404);
       return { code: x.code, name: x.name, leftMilli: x.left_milli, note: text(b.note, 'note') };
     }
+    case 'stash_in': {
+      const phone = (await db.one('SELECT phone FROM customers WHERE id = ?', [customerId]))?.phone;
+      if (!phone) throw new DomainError('verify your phone number so staff can store the bottle under it', 403);
+      return { phone, name: required(b.name, 'bottle', 60), left: oneOf(b.left, 'left', BOTTLE_LEFT), note: text(b.note, 'note') };
+    }
     case 'support':
       return { message: required(b.message, 'message', MAX_MESSAGE) };
     case 'pet': {
@@ -74,7 +81,8 @@ export async function createRequest(db: Db, customerId: number, b: Record<string
   const kind = oneOf(b.kind, 'kind', [...KINDS]) as Kind;
   let store: StoreRef;
   let tableId: number | null = null;
-  if (AT_TABLE.includes(kind) || (kind === 'song' && b.qrToken)) {
+  // Songs and bottles to store can come from the table QR or from the app before the guest has a table.
+  if (AT_TABLE.includes(kind) || ((kind === 'song' || kind === 'stash_in') && b.qrToken)) {
     const r = await tableByToken(db, String(b.qrToken ?? ''));
     store = r.store;
     tableId = r.table.id;

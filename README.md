@@ -8,7 +8,7 @@ WeChat Pay, Alipay and Douyin (抖音来客) integrations; Postgres; self-monito
 ```bash
 npm install
 node scripts/dev.ts          # http://localhost:3500: simulated payments + demo company (dev only)
-npm test                     # 754 tests on embedded Postgres (PGlite); on a low-memory machine use --test-concurrency=1
+npm test                     # 761 tests on embedded Postgres (PGlite); on a low-memory machine use --test-concurrency=1
 node scripts/test-pg.ts      # same suite through the production `pg` driver over the Postgres wire protocol
 node scripts/simulate.ts http://localhost:3500 dev-admin-key 4 25   # multi-company load simulation + books audit
 ```
@@ -81,7 +81,7 @@ A mobile web page for guests, at `/g/<company code>` (works in WeChat, Alipay, D
 | Address | What the guest gets |
 |---|---|
 | `/g/` | **find a place**: search every listed business on the platform by name, city or street, filter by city, plus "my places" (businesses the guest has used). Each company only shares its public name, locations, city and address; owners set city/address in Admin > Locations in the app and can turn listing off in Admin > Customer app |
-| `/g/<company>` | **member dashboard**: switch merchant, choose a location, member card (points, wallet, vouchers, progress to the next reward), quick actions (order, menu, book, songs, games, prize wheel, rewards, invite, events, history, pets, contact, only those switched on), next booking, news, recent activity. Signed-out guests see the cover and a join card. Bottom menu bar: Home, Order, Rewards, History, Me. Looks are the company's own, set in Admin > App design: theme (Night gold, Midnight blue, Noir, Daylight, Blush), brand colour (text contrast adjusted automatically), headline, tagline, logo and cover photo |
+| `/g/<company>` | **member dashboard**: switch merchant, choose a location, member card (points, wallet, vouchers, progress to the next reward), quick actions (order, menu, book, songs, games, prize wheel, rewards, invite, events, history, pets, contact, only those switched on), next booking, news, recent activity. The member card also shows **total spent** (paid on settled bills under the guest's phone) and, without a wallet yet, an **open a member card** button. After scanning a table code, two cards lead back to **ordering at that table** and **paying its bill** (台位码收款). The venue **WiFi** name and password (set per location in Admin > Locations) show with a copy button. Signed-out guests see the cover and a join card. Bottom menu bar: Home, Order, Rewards, History, Me. Looks are the company's own, set in Admin > App design: theme (Night gold, Midnight blue, Noir, Daylight, Blush), brand colour (text contrast adjusted automatically), headline, tagline, logo and cover photo |
 | `/g/<company>/<store>` | the same dashboard with that location chosen (remembered for next time) |
 | `/g/<company>/<store>/menu` | the menu with prices and sold-out items (browse only) |
 | `/g/<company>/<store>/t/<token>` | **table QR code**: order from the menu, follow "my orders", see the table's bill and pay it |
@@ -90,6 +90,7 @@ A mobile web page for guests, at `/g/<company code>` (works in WeChat, Alipay, D
 | `/g/<company>/wallet` | wallet balance, top-up and payment history, stored bottles with pick-up codes |
 | `/g/<company>/history` | all orders (cancel, pay pickup/delivery orders) and bookings (cancel, book again); `/orders` opens it too |
 | `/g/<company>/activity` | one timeline of points, wallet, orders, vouchers and requests, with filters |
+| `/g/<company>/bottles` | **my bottles** (stored bottles with pick-up codes) and **store a bottle** (自助存酒): the guest asks staff to keep a bottle they did not finish (how much is left, at their table or chosen location); it lands in Guest orders as "Store bottle" with the guest's verified phone, and staff store it in the Stash tab |
 | `/g/<company>/songs` | request a song from the app (sent to the table the guest last scanned, else to the chosen location) and follow the queue |
 | `/g/<company>/invite` | invite code and link (share or copy), invited / joined / points earned, enter a friend's code |
 | `/g/<company>/rewards` | points, redeem rewards for voucher codes, my vouchers, points history |

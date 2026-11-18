@@ -10,6 +10,13 @@ import { icon } from './icons.js';
 
 addStrings({
   en: {
+    'db.spent': 'Total spent', 'db.openCard': 'Open a member card: top up and pay faster', 'db.bottles': 'My bottles', 'db.coupons': 'Coupons', 'db.card': 'Member card',
+    'db.myTable': 'Table {table}', 'db.payTable': 'Pay my table', 'db.payTableHint': 'Pay by table code', 'db.wifi': 'WiFi: {name}',
+    'db.wifiPassword': 'Password: {password}', 'db.wifiOpen': 'No password', 'db.copy': 'Copy', 'db.copied': 'Password copied.',
+    'bt.title': 'My bottles', 'bt.off': 'This venue does not keep bottles.', 'bt.mine': 'Stored for me', 'bt.needPhone': 'Verify your phone number to see bottles stored for you.',
+    'bt.takeHint': 'To drink one, scan your table code and choose "Bring my stored bottle".', 'bt.store': 'Store a bottle', 'bt.storeIntro': 'Not finishing a bottle? Ask staff to keep it for you. They store it under your phone number and it appears above.',
+    'bt.name': 'Bottle', 'bt.namePh': 'e.g. Hennessy XO', 'bt.left': 'How much is left', 'bt.send': 'Ask staff to keep it', 'bt.sent': 'Sent. Staff will come for the bottle.',
+    'bt.asked': 'My requests', 'bt.table': 'At table {table}', 'bt.note': 'Note (optional)',
     'db.hi': 'Hi, {name}', 'db.member': 'Member at {company}', 'db.points': 'Points', 'db.wallet': 'Wallet', 'db.vouchers': 'Vouchers',
     'db.walletLocked': 'Verify', 'db.nextReward': '{n} more points for {reward}', 'db.canRedeem': 'You can redeem {reward} now',
     'db.join': 'Join {company}', 'db.joinText': 'Collect points, keep your wallet and bottles, book and order ahead, and request songs.',
@@ -33,6 +40,13 @@ addStrings({
     'sg.none': 'No song requests yet.', 'sg.off': 'Song requests are not available here.', 'sg.queue': '{n} waiting',
   },
   zh: {
+    'db.spent': '总消费', 'db.openCard': '开通会员卡：储值更优惠，买单更快', 'db.bottles': '我的存酒', 'db.coupons': '优惠券', 'db.card': '会员卡',
+    'db.myTable': '{table} 台', 'db.payTable': '台位码收款', 'db.payTableHint': '扫码买单', 'db.wifi': 'WiFi：{name}',
+    'db.wifiPassword': '密码：{password}', 'db.wifiOpen': '无需密码', 'db.copy': '复制', 'db.copied': '密码已复制。',
+    'bt.title': '我的存酒', 'bt.off': '本店暂不提供存酒。', 'bt.mine': '我存的酒', 'bt.needPhone': '验证手机号后即可查看存酒。',
+    'bt.takeHint': '想取酒？扫台位码，选择“取我的存酒”。', 'bt.store': '自助存酒', 'bt.storeIntro': '喝不完？让服务员帮你存起来，会按你的手机号存入，存好后显示在上方。',
+    'bt.name': '酒水名称', 'bt.namePh': '例如：轩尼诗 XO', 'bt.left': '剩余多少', 'bt.send': '请服务员帮我存酒', 'bt.sent': '已提交，服务员会来取酒。',
+    'bt.asked': '我的存酒申请', 'bt.table': '在 {table} 台', 'bt.note': '备注（选填）',
     'db.hi': '您好，{name}', 'db.member': '{company} 会员', 'db.points': '积分', 'db.wallet': '储值', 'db.vouchers': '兑换券',
     'db.walletLocked': '去验证', 'db.nextReward': '再得 {n} 积分可兑换 {reward}', 'db.canRedeem': '现在可兑换 {reward}',
     'db.join': '加入 {company}', 'db.joinText': '累积积分、查看储值与存酒、预订和提前下单，还能点歌。',
@@ -64,7 +78,7 @@ const REQ_TONE = { pending: 'pending', done: 'ok', declined: 'bad', cancelled: '
 const ORDER_TONE = { pending: 'pending', accepted: 'ok', rejected: 'bad', cancelled: 'neutral' };
 const BOOKING_TONE = { submitted: 'pending', confirmed: 'ok', checked_in: 'ok', redeemed: 'neutral', cancelled: 'neutral', no_show: 'bad' };
 const OPEN_BOOKING = ['submitted', 'confirmed'];
-const KIND_ICON = { service: 'chat', song: 'music', bottle: 'gift', support: 'chat', pet: 'paw' };
+const KIND_ICON = { service: 'chat', song: 'music', bottle: 'gift', stash_in: 'gift', support: 'chat', pet: 'paw' };
 const bi = (zh, en) => (getLang() === 'en' && en ? en : zh);
 /** ¥688 rather than ¥688.00 where space is tight; keeps the cents when there are any. */
 const shortMoney = (fen) => (fen % 100 === 0 ? `¥${(fen / 100).toLocaleString('en-US')}` : fmtMoney(fen));
@@ -156,6 +170,9 @@ function quickActions(v, store) {
     f.loyalty && { href: `${co}/rewards`, icon: 'gift', label: t('db.rewards') },
     f.loyalty && f.referral && { href: `${co}/invite`, icon: 'users', label: t('db.invite') },
     f.events && { href: `${co}/events`, icon: 'star', label: t('db.events') },
+    f.bottle && { href: `${co}/bottles`, icon: 'gift', label: t('db.bottles') },
+    f.loyalty && { href: `${co}/rewards`, icon: 'ticket', label: t('db.coupons') },
+    { href: `${co}/wallet`, icon: 'wallet', label: t('db.card') },
     { href: `${co}/history`, icon: 'clock', label: t('db.history') },
     f.pets && { href: `${co}/pets`, icon: 'paw', label: t('db.pets') },
     f.support && { href: `${co}/support`, icon: 'chat', label: t('db.support') },
@@ -171,6 +188,24 @@ function whereHtml(store) {
   const query = [store.city, store.address].filter(Boolean).join(' ');
   return html`<div class="g-where">${icon('pin', 'g-where__icon')}<span class="g-where__text"><strong>${store.name}</strong><span>${line}</span></span>
     <a class="g-btn g-btn--small" href="${MAP_SEARCH}?keyword=${enc(query)}&src=nightpos" target="_blank" rel="noopener">${t('db.map')}</a></div>`;
+}
+
+/** The table the guest scanned last: straight back to ordering, or to pay the bill (台位码收款). */
+function tableCardHtml(v) {
+  const table = lastTable(v.company.code);
+  if (!table?.storeCode) return '';
+  const at = `/g/${enc(v.company.code)}/${enc(table.storeCode)}/t/${enc(table.token)}`;
+  return html`<div class="g-tablecards">
+    <a class="g-tablecard" href="${at}">${icon('bag')}<span><span class="g-hint">${t('db.order')}</span><strong>${t('db.myTable', { table: table.tableName })}</strong></span>${icon('chevron', 'g-tablecard__chev')}</a>
+    <a class="g-tablecard" href="${at}?tab=bill">${icon('receipt')}<span><span class="g-hint">${t('db.payTableHint')}</span><strong>${t('db.payTable')}</strong></span>${icon('chevron', 'g-tablecard__chev')}</a></div>`;
+}
+
+/** The venue WiFi with a copy button, when the owner filled it in (Admin > Locations). */
+function wifiHtml(store) {
+  if (!store?.wifiSsid) return '';
+  return html`<div class="g-where">${icon('globe', 'g-where__icon')}<span class="g-where__text"><strong>${t('db.wifi', { name: store.wifiSsid })}</strong>
+    <span>${store.wifiPassword ? t('db.wifiPassword', { password: store.wifiPassword }) : t('db.wifiOpen')}</span></span>
+    ${store.wifiPassword && html`<button type="button" class="g-btn g-btn--small" data-copy="${store.wifiPassword}">${t('db.copy')}</button>`}</div>`;
 }
 
 const quickGrid = (actions) => html`<nav class="g-quick" aria-label="${t('db.quick')}">${actions.map((a) =>
@@ -205,9 +240,10 @@ function memberCardHtml(v, d) {
     <div class="g-member__stats">
       ${l && html`<a class="g-stat" href="${co}/rewards" data-link><span class="g-stat__label">${t('db.points')}</span><strong class="g-stat__value g-num">${l.balance}</strong></a>`}
       <a class="g-stat" href="${co}/wallet" data-link><span class="g-stat__label">${t('db.wallet')}</span><strong class="g-stat__value g-num">${walletValue}</strong></a>
-      ${l ? html`<a class="g-stat" href="${co}/rewards" data-link><span class="g-stat__label">${t('db.vouchers')}</span><strong class="g-stat__value g-num">${openVouchers}</strong></a>`
-        : html`<a class="g-stat" href="${co}/history" data-link><span class="g-stat__label">${t('hist.orders')}</span><strong class="g-stat__value g-num">${a.orders.length}</strong></a>`}
+      ${l && html`<a class="g-stat" href="${co}/rewards" data-link><span class="g-stat__label">${t('db.vouchers')}</span><strong class="g-stat__value g-num">${openVouchers}</strong></a>`}
+      <a class="g-stat" href="${co}/history" data-link><span class="g-stat__label">${t('db.spent')}</span><strong class="g-stat__value g-num">${shortMoney(a.totalSpent ?? 0)}</strong></a>
     </div>
+    ${!a.wallet && html`<a class="g-member__cta" href="${co}/wallet" data-link>${icon('wallet')}${t('db.openCard')}</a>`}
     ${l && (next || best) && html`<a class="g-member__goal" href="${co}/rewards" data-link>
       <span>${next ? t('db.nextReward', { n: next.cost - l.balance, reward: bi(next.name, next.nameEn) }) : t('db.canRedeem', { reward: bi(best.name, best.nameEn) })}</span>
       <span class="g-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><span style="width:${progress}%"></span></span></a>`}
@@ -233,12 +269,19 @@ export async function mountDashboard(root, v, { store, navigate, newsHtml, cover
   setHtml(root, html`${switcherHtml(v, store)}
     ${!session.customer && coverHtml}
     <div data-member>${session.customer ? html`<div class="g-skel g-skel--card"></div>` : ''}</div>
+    ${tableCardHtml(v)}
     ${whereHtml(store)}
+    ${wifiHtml(store)}
     <h2 class="g-cat">${t('db.quick')}</h2>${quickGrid(quickActions(v, store))}
     ${newsHtml}
     <div data-recent></div>`);
   root.addEventListener('click', (e) => {
     if (e.target.closest('[data-switch]')) { void chooseMerchant(v.company.code, navigate); return; }
+    const copy = e.target.closest('[data-copy]');
+    if (copy) {
+      navigator.clipboard?.writeText(copy.dataset.copy).then(() => toast(t('db.copied'), 'success'), () => toast(copy.dataset.copy));
+      return;
+    }
     const chip = e.target.closest('[data-store]');
     if (!chip || chip.dataset.store === store?.code) return;
     const next = v.stores.find((s) => s.code === chip.dataset.store);
@@ -513,6 +556,61 @@ export async function mountSongs(root, { company, stores, features = {} }) {
     try {
       await post('/api/guest/requests', { kind: 'song', ...where, title: f.title.value, artist: f.artist.value, note: f.note.value });
       toast(t('song.sent'), 'success');
+      await load();
+    } catch (ex) {
+      err.textContent = ex.message;
+      err.hidden = false;
+    }
+  });
+  onCancelRequest(root, load);
+  await load();
+}
+
+const BOTTLE_LEFT = ['full', 'most', 'half', 'little'];
+
+/** 我的存酒 + 自助存酒: the guest's stored bottles, and asking staff to keep one (they store it under the guest's phone). */
+export async function mountBottles(root, { company, stores, features = {} }) {
+  if (!features.bottle) { setHtml(root, html`${pageHead(t('bt.title'))}<p class="g-empty">${t('bt.off')}</p>`); return; }
+  const table = lastTable(company);
+  const here = stores.length ? pickedStore({ company: { code: company }, stores }) : null;
+  const load = async () => {
+    if (!session.customer) { signInCard(root, load); return; }
+    setHtml(root, skeleton(3));
+    const [acct, reqs] = await Promise.all([get(`/api/guest/account/${enc(company)}`), get(`/api/guest/requests/${enc(company)}`)]);
+    const asked = reqs.filter((r) => r.kind === 'stash_in');
+    setHtml(root, html`${pageHead(t('bt.title'))}
+      <h2 class="g-cat">${t('bt.mine')}</h2>
+      ${acct.stash.length ? html`<div class="g-actions">${acct.stash.map((s) => html`<div class="g-tile">
+        <span class="g-tile__text"><strong>${s.name}</strong><span>${s.storeName} · ${t('account.stashCode', { code: s.code })} · ${t('account.expires', { date: fmtDate(s.expiresAt) })}</span></span>
+        <span class="g-num g-badge g-badge--ok">${t('account.stashLeft', { n: fmtBottles(s.leftMilli) })}</span></div>`)}</div>`
+        : html`<p class="g-empty">${acct.phoneVerified ? t('account.noStash') : t('bt.needPhone')}</p>`}
+      <p class="g-hint">${t('bt.takeHint')}</p>
+      <h2 class="g-cat">${t('bt.store')}</h2>
+      <form class="g-card" data-stash novalidate>
+        <p class="g-hint">${t('bt.storeIntro')}</p>
+        ${table ? html`<p class="g-pill">${icon('pin')}${t('bt.table', { table: table.tableName })}</p>`
+          : stores.length > 1 ? html`<div class="g-field"><label for="bs">${t('sup.store')}</label><select id="bs" name="store">${stores.map((s) =>
+            html`<option value="${s.code}" ${s.code === here?.code ? 'selected' : ''}>${s.name}</option>`)}</select></div>` : ''}
+        <div class="g-field"><label for="bn">${t('bt.name')}</label><input id="bn" name="name" maxlength="60" required placeholder="${t('bt.namePh')}"></div>
+        <fieldset class="g-field g-fieldset"><legend>${t('bt.left')}</legend><div class="g-chips g-chips--wrap">${BOTTLE_LEFT.map((k, i) =>
+          html`<label class="g-chip g-chip--radio"><input type="radio" name="left" value="${k}" ${i === 0 ? 'checked' : ''}><span>${t(`req.left.${k}`)}</span></label>`)}</div></fieldset>
+        <div class="g-field"><label for="bm">${t('bt.note')}</label><input id="bm" name="note" maxlength="200"></div>
+        <p class="g-error" role="alert" hidden></p>
+        <button type="submit" class="g-btn g-btn--primary g-btn--block">${icon('gift')}${t('bt.send')}</button></form>
+      ${asked.length > 0 && html`<h2 class="g-cat">${t('bt.asked')}</h2><section class="g-card">${requestsHtml(asked)}</section>`}`);
+  };
+  root.addEventListener('submit', async (e) => {
+    const form = e.target.closest('[data-stash]');
+    if (!form) return;
+    e.preventDefault();
+    const err = form.querySelector('.g-error');
+    err.hidden = true;
+    const f = form.elements;
+    if (!session.customer.phone && !await verifyPhone()) return;
+    const where = table ? { qrToken: table.token } : { company, store: f.store ? f.store.value : stores[0]?.code };
+    try {
+      await post('/api/guest/requests', { kind: 'stash_in', ...where, name: f.name.value, left: f.left.value, note: f.note.value });
+      toast(t('bt.sent'), 'success');
       await load();
     } catch (ex) {
       err.textContent = ex.message;

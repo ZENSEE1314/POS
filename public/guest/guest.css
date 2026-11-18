@@ -453,3 +453,24 @@ div.g-menu__row { cursor: default; }
 .g-bubble a { color: var(--color-accent-text); }
 .g-bubble--me { border-radius: var(--radius-lg) var(--radius-lg) var(--radius-sm) var(--radius-lg); color: var(--color-primary-fg); background: var(--color-primary); border-color: transparent; }
 .g-composer textarea { min-height: 64px; }
+
+/* table shortcut cards and the member-card call to action */
+.g-tablecards { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); margin: var(--space-3) 0; }
+.g-tablecard { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-md); text-decoration: none;
+  color: var(--color-fg); background: var(--color-surface); border: 1px solid var(--color-border); min-height: 64px; }
+.g-tablecard > span { display: grid; flex: 1; min-width: 0; }
+.g-tablecard strong { color: var(--color-fg-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g-tablecard .g-icon:first-child { color: var(--color-accent-text); width: 26px; height: 26px; flex: none; }
+.g-tablecard__chev { width: 18px; height: 18px; opacity: .6; flex: none; }
+.g-member__cta { display: flex; align-items: center; justify-content: center; gap: var(--space-2); margin-top: var(--space-3); padding: var(--space-2) var(--space-3);
+  border-radius: 999px; background: var(--color-primary); color: var(--color-primary-fg); font-weight: 700; text-decoration: none; }
+.g-member__cta .g-icon { width: 18px; height: 18px; }
+.g-chip--radio { position: relative; cursor: pointer; }
+.g-chip--radio input { position: absolute; opacity: 0; }
+.g-chip--radio:has(input:checked) { background: var(--color-primary); color: var(--color-primary-fg); border-color: transparent; }
+.g-chip--radio:has(input:focus-visible) { outline: 2px solid var(--color-focus, currentColor); outline-offset: 2px; }
+/* Four figures (points, wallet, vouchers, total spent) do not fit one row on a phone: two rows of two. */
+@media (max-width: 480px) { .g-member__stats:has(> :nth-child(4)) { grid-auto-flow: row; grid-template-columns: 1fr 1fr; } }
+.g-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.g-fieldset legend { padding: 0; margin-bottom: var(--space-1); }
+.g-chips--wrap { flex-wrap: wrap; overflow: visible; }

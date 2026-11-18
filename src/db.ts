@@ -600,6 +600,16 @@ const MIGRATIONS: Array<{ id: number; statements: string[] }> = [
       'CREATE INDEX IF NOT EXISTS deposits_store_status ON deposits (store_id, status)',
     ],
   },
+  {
+    // Customer app: the venue WiFi per location, and guests asking staff to store a bottle for them (自助存酒).
+    id: 23,
+    statements: [
+      "ALTER TABLE stores ADD COLUMN IF NOT EXISTS wifi_ssid TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE stores ADD COLUMN IF NOT EXISTS wifi_password TEXT NOT NULL DEFAULT ''",
+      'ALTER TABLE guest_requests DROP CONSTRAINT IF EXISTS guest_requests_kind_check',
+      "ALTER TABLE guest_requests ADD CONSTRAINT guest_requests_kind_check CHECK (kind IN ('service','song','bottle','stash_in','support','pet'))",
+    ],
+  },
 ];
 
 async function migrate(db: Db): Promise<void> {

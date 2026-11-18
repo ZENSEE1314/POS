@@ -71,7 +71,8 @@ const guestProduct = (p: any) => ({
 
 export async function venueInfo(db: Db, company: string) {
   const t = await tenantByCode(db, company);
-  const stores = await db.all('SELECT name, code, city, address, postal_code AS "postalCode" FROM stores WHERE tenant_id = ? AND active ORDER BY id', [t.id]);
+  const stores = await db.all(`SELECT name, code, city, address, postal_code AS "postalCode", wifi_ssid AS "wifiSsid", wifi_password AS "wifiPassword"
+    FROM stores WHERE tenant_id = ? AND active ORDER BY id`, [t.id]);
   const { type, modules } = await businessOf(db, t.id);
   return {
     company: { name: t.name, code: t.code }, stores, features: (await guestSettings(db, t.id)).features,
@@ -382,11 +383,17 @@ export async function accountAt(db: Db, customerId: number, company: string) {
      WHERE b.customer_id = ? AND s.tenant_id = ? ORDER BY b.eta DESC LIMIT ?`, [customerId, t.id, RECENT]);
   const orders = await db.all(`${ORDER_SQL} WHERE o.customer_id = ? AND s.tenant_id = ? ORDER BY o.id DESC LIMIT ?`, [customerId, t.id, RECENT]);
   for (const o of orders) await withDue(db, o);
+  // Everything paid on settled bills this guest was the member on (总消费), at every location of the company.
+  const spent = member
+    ? await db.one(`SELECT COALESCE(SUM(p.amount), 0) AS v FROM payments p JOIN bills b ON b.id = p.bill_id
+        WHERE b.member_id = ? AND b.status = 'settled' AND p.status = 'paid'`, [member.id])
+    : null;
   const items = await orderItems(db, orders.map((o) => o.id));
   return {
     company: { name: t.name, code: t.code },
     phoneVerified: Boolean(phone),
     wallet: member ? { balance: member.balance, ledger } : null,
+    totalSpent: Number(spent?.v ?? 0),
     stash, bookings,
     orders: orders.map((o) => orderView(o, items.get(o.id) ?? [])),
   };

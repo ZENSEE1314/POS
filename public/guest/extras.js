@@ -263,6 +263,7 @@ export function requestSummary(r) {
     case 'service': return t(`svc.reason.${d.reason}`) + (d.note ? `: ${d.note}` : '');
     case 'song': return d.artist ? `${d.title} · ${d.artist}` : d.title;
     case 'bottle': return d.name;
+    case 'stash_in': return `${d.name} · ${t(`req.left.${d.left}`)}`;
     case 'support': return d.message;
     case 'pet': return `${d.pet.name} · ${t(`pet.svc.${d.service}`)} · ${fmtDateTime(d.when)}`;
     default: return '';
