@@ -1,0 +1,3 @@
+<web-view wx:if="{{src}}" src="{{src}}"></web-view>
+<view wx:elif="{{error}}" class="wrap"><text class="error">{{error}}</text></view>
+<view wx:else class="wrap"><text class="hint">加载中…</text></view>

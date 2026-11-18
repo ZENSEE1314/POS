@@ -156,6 +156,45 @@ export class MockLogin implements IdentityProvider {
   }
 }
 
+/** WeChat mini program (小程序) sign-in: wx.login gives a one-time code that only the server, with the AppSecret, can swap. */
+export interface MiniProgramLogin {
+  readonly appId: string;
+  login(code: string): Promise<IdentityProfile>;
+}
+
+export class WechatMiniProgramLogin implements MiniProgramLogin {
+  readonly appId: string;
+  private secret: string;
+
+  constructor(appId: string, secret: string) {
+    this.appId = appId;
+    this.secret = secret;
+  }
+
+  async login(code: string): Promise<IdentityProfile> {
+    const q = new URLSearchParams({ appid: this.appId, secret: this.secret, js_code: code, grant_type: 'authorization_code' });
+    const r = await getJson(`https://api.weixin.qq.com/sns/jscode2session?${q}`);
+    if (r.errcode || !r.openid) throw new Error(`wechat jscode2session: ${r.errcode ?? 'no openid'} ${r.errmsg ?? ''}`);
+    // Mini programs no longer get the nickname at sign-in; the guest can set a name in the app.
+    return { subject: r.openid, appId: this.appId, unionId: r.unionid || undefined, displayName: '' };
+  }
+}
+
+/** Development: WeChat DevTools with a test AppID; the same code always maps to the same test guest. */
+export class MockMiniProgramLogin implements MiniProgramLogin {
+  readonly appId = 'mock-miniprogram';
+
+  async login(code: string): Promise<IdentityProfile> {
+    return { subject: `mock-mp-${createHash('sha256').update(code).digest('hex').slice(0, 24)}`, appId: this.appId, displayName: '' };
+  }
+}
+
+export function buildMiniProgramLogin(env: NodeJS.ProcessEnv): MiniProgramLogin | undefined {
+  if (env.WECHAT_MP_APPID && env.WECHAT_MP_SECRET) return new WechatMiniProgramLogin(env.WECHAT_MP_APPID, env.WECHAT_MP_SECRET);
+  if (env.PAY_MODE === 'mock') return new MockMiniProgramLogin();
+  return undefined;
+}
+
 export type IdentityProviders = Partial<Record<LoginProvider, IdentityProvider>>;
 
 /** Each login is enabled only when its credentials exist, like payments. */

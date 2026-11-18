@@ -228,6 +228,17 @@ export async function finishProviderLogin() {
   const params = new URLSearchParams(location.hash.slice(1));
   const code = params.get('login');
   const error = params.get('loginError');
+  const handoff = params.get('mpLogin');
+  if (handoff) {
+    history.replaceState(null, '', location.pathname + location.search);
+    // The mini program already signed this WeChat user in; take over its session. On failure the stored session stays.
+    try {
+      const r = await post('/api/guest/mp/session', { code: handoff });
+      saveToken(r.token);
+      session.customer = r.customer;
+    } catch { /* expired (the page was reopened from history): keep whatever session this web-view has */ }
+    return;
+  }
   if (!code && !error) return;
   history.replaceState(null, '', location.pathname + location.search);
   if (error) {

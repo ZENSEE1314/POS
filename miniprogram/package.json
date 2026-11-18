@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "commonjs",
+  "description": "Mini program code is CommonJS (require/module.exports), like WeChat runs it."
+}

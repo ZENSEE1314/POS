@@ -1,0 +1,15 @@
+<view class="wrap">
+  <text class="title">微信支付</text>
+  <text wx:if="{{amountText}}" class="amount">{{amountText}}</text>
+  <text wx:if="{{state === 'loading'}}" class="hint">正在发起付款…</text>
+  <text wx:if="{{state === 'confirming'}}" class="hint">付款成功，正在确认…</text>
+  <block wx:if="{{state === 'mock'}}">
+    <text class="hint">开发环境：不会真的扣款。</text>
+    <button class="btn btn-primary" bindtap="mockPay">模拟付款成功</button>
+  </block>
+  <block wx:if="{{state === 'failed'}}">
+    <text class="error">{{error}}</text>
+    <button class="btn btn-primary" bindtap="start">重新付款</button>
+  </block>
+  <button wx:if="{{state === 'failed' || state === 'mock'}}" class="btn btn-plain" bindtap="goBack">返回</button>
+</view>

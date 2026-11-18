@@ -39,7 +39,7 @@ import { cleanPhone, normalizePhone } from './phone.ts';
 import { handleWechatOa } from './guest/wechat-oa.ts';
 import { FileBody, HtmlPage, Redirect } from './responses.ts';
 import { AlipayProvider } from './payments/alipay.ts';
-import { buildIdentityProviders } from './guest/identity.ts';
+import { buildIdentityProviders, buildMiniProgramLogin } from './guest/identity.ts';
 import { buildSms } from './guest/sms.ts';
 import { registerGuestRoutes } from './guest/routes.ts';
 
@@ -64,6 +64,9 @@ const SECURITY_HEADERS = {
   'Referrer-Policy': 'no-referrer',
   'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:*; frame-ancestors 'none'",
 };
+
+/** The customer app may also load WeChat's JS-SDK, which its mini program web-view needs to open the native pay page. */
+const GUEST_PAGE_CSP = { 'Content-Security-Policy': SECURITY_HEADERS['Content-Security-Policy'].replace("script-src 'self'", "script-src 'self' https://res.wx.qq.com") };
 
 type Handler = (ctx: { db: Db; actor: Actor; token: string; params: string[]; body: any; query: URLSearchParams; ip: string; cookie: string }) => unknown | Promise<unknown>;
 interface Route { method: string; pattern: RegExp; auth: boolean; key: string; handler: Handler }
@@ -414,6 +417,7 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
     registerPerIpPerHour: env.GUEST_REGISTER_PER_IP_PER_HOUR ? Number(env.GUEST_REGISTER_PER_IP_PER_HOUR) : undefined,
     loginPerIpPer10Min: env.GUEST_LOGIN_PER_IP_PER_10MIN ? Number(env.GUEST_LOGIN_PER_IP_PER_10MIN) : undefined,
     identities: buildIdentityProviders(env, providers.alipay instanceof AlipayProvider ? providers.alipay : undefined),
+    miniProgram: buildMiniProgramLogin(env),
   });
 
   if (isMock) {
@@ -440,7 +444,7 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
     const body = rel === 'sw.js'
       ? readFileSync(file, 'utf8').replace('/*BUILD*/ null', JSON.stringify(buildAssetManifest(PUBLIC_DIR)))
       : readFileSync(file);
-    send(res, 200, body, MIME[extname(file)] ?? 'application/octet-stream', { 'Cache-Control': 'no-cache' });
+    send(res, 200, body, MIME[extname(file)] ?? 'application/octet-stream', { 'Cache-Control': 'no-cache', ...(isGuestPage ? GUEST_PAGE_CSP : {}) });
   };
 
   const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {

@@ -10,9 +10,9 @@ import { HtmlPage, Redirect } from '../responses.ts';
 import {
   consumeAuthState, createAuthState, createLoginCode, customerIdFromToken, endSession, exchangeLoginCode, getCustomer, guestPhone, issuePasswordReset,
   linkPhone, loginWithPassword, loginWithPhone, newBrowserNonce, registerWithPassword, renameCustomer, requestOtp, resetPassword, safeReturnPath,
-  signInWithIdentity,
+  signInWithIdentity, createHandoffCode, exchangeHandoffCode, startSession,
 } from './accounts.ts';
-import type { IdentityProviders, LoginProvider } from './identity.ts';
+import type { IdentityProviders, LoginProvider, MiniProgramLogin } from './identity.ts';
 import { LOGIN_PROVIDERS } from './identity.ts';
 import type { SmsSender } from './sms.ts';
 import {
@@ -47,6 +47,9 @@ const REGISTER_PER_IP_PER_HOUR = 30;
 /** Platform-wide ceiling on SMS sent, so a pumping attack across many numbers cannot run up the SMS bill. */
 const DEFAULT_SMS_PER_HOUR = 300;
 const AUTH_COOKIE = 'np_gauth';
+/** Mini program sign-ins per IP per 10 minutes: each app launch is one, and a venue's guests share its Wi-Fi. */
+const MP_LOGIN_PER_IP_PER_10MIN = 60;
+const MAX_MP_CODE = 128;
 const AUTH_COOKIE_MAX_AGE_S = 15 * 60;
 
 interface Ctx { db: Db; actor: Actor; token: string; params: string[]; body: any; query: URLSearchParams; ip: string; cookie: string }
@@ -59,6 +62,8 @@ export interface GuestDeps {
   db: Db;
   payProviders: Providers;
   identities: IdentityProviders;
+  /** WeChat mini program sign-in; on when WECHAT_MP_APPID + WECHAT_MP_SECRET are set (or in mock mode). */
+  miniProgram?: MiniProgramLogin;
   sms?: SmsSender;
   baseUrl: string;
   isMock: boolean;
@@ -89,7 +94,8 @@ button{margin-top:16px;width:100%;min-height:44px;font:inherit;font-weight:800;b
 
 /** Customer app API (/api/guest/*) plus the staff endpoints that handle what guests send. */
 export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
-  const { payProviders, identities, sms, baseUrl, isMock, num } = deps;
+  const { payProviders, identities, miniProgram, sms, baseUrl, isMock, num } = deps;
+  const mpLoginLimiter = new RateLimiter(MP_LOGIN_PER_IP_PER_10MIN, 10 * 60_000);
   const otpIpLimiter = new RateLimiter(deps.otpPerIpPerHour ?? OTP_PER_IP_PER_HOUR, HOUR_MS);
   const otpPhoneHourly = new RateLimiter(OTP_PER_PHONE_PER_HOUR, HOUR_MS);
   const otpPhoneDaily = new RateLimiter(OTP_PER_PHONE_PER_DAY, DAY_MS);
@@ -113,6 +119,7 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
     mock: isMock,
     login: { wechat: Boolean(identities.wechat), alipay: Boolean(identities.alipay), douyin: Boolean(identities.douyin), phone: Boolean(sms), password: true },
     payments: { wechat: Boolean(payProviders.wechat), alipay: Boolean(payProviders.alipay) },
+    miniProgram: Boolean(miniProgram),
   }));
   route('GET', '/api/guest/directory', false, ({ db, query }) => searchDirectory(db, query.get('q') ?? '', query.get('city') ?? ''));
   route('GET', '/api/guest/me/places', false, signedIn(({ db }, id) => myPlaces(db, id)));
@@ -158,6 +165,23 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
     }
   });
   route('POST', '/api/guest/session', false, ({ db, body, cookie }) => exchangeLoginCode(db, body.code, readCookie(cookie, AUTH_COOKIE)));
+
+  // ---- WeChat mini program: wx.login code -> session; then a one-time code hands the session to its web-view ----
+  route('POST', '/api/guest/mp/login', false, async ({ db, body, ip }) => {
+    if (!miniProgram) throw new DomainError('mini program sign-in is not available yet', 404);
+    if (!mpLoginLimiter.allow(ip)) throw new DomainError('too many attempts, try again later', 429);
+    if (typeof body.code !== 'string' || !body.code || body.code.length > MAX_MP_CODE) throw new DomainError('code required', 422);
+    let profile;
+    try {
+      profile = await miniProgram.login(body.code);
+    } catch (e) {
+      await logEvent(db, 'warn', 'guest.login_failed', `mini program sign-in failed: ${(e as Error).message}`, { ip });
+      throw new DomainError('WeChat sign-in failed, please try again', 502);
+    }
+    return startSession(db, await signInWithIdentity(db, 'wechat', profile));
+  });
+  route('POST', '/api/guest/mp/handoff', false, signedIn(({ db }, id) => createHandoffCode(db, id)));
+  route('POST', '/api/guest/mp/session', false, ({ db, body }) => exchangeHandoffCode(db, body.code));
 
   // ---- phone + SMS code ----
   route('POST', '/api/guest/otp', false, async ({ db, body, ip }) => {
@@ -219,17 +243,22 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
     if (body.method !== 'wechat' && body.method !== 'alipay') throw new DomainError('method must be wechat, alipay or member', 422);
     const provider = payProviders[body.method as OnlineMethod];
     if (!provider) throw new DomainError(`${body.method} payments are not available yet`, 422);
+    // Inside the mini program WeChat Pay runs under the mini program's appid, with the openid it signed in with.
+    const inMiniProgram = body.channel === 'miniprogram';
+    if (inMiniProgram && (provider.method !== 'wechat' || !miniProgram)) throw new DomainError('pay with WeChat inside the mini program', 422);
     const r = await reserveGuestPayment(db, customerId, target, provider.method, amount);
     // JSAPI needs the payer's openid for the very appid WeChat Pay is bound to.
-    const payAppId = (provider as { appId?: string }).appId;
+    const payAppId = inMiniProgram ? miniProgram!.appId : (provider as { appId?: string }).appId;
     const openId = provider.method === 'wechat' && payAppId
       ? (await db.one("SELECT subject FROM customer_identities WHERE customer_id = ? AND provider = 'wechat' AND app_id = ?", [customerId, payAppId]))?.subject
       : undefined;
     try {
       const charge = await provider.createGuestCharge({
         outTradeNo: r.outTradeNo, amountFen: r.pay, subject: `${r.storeName} #${r.billId}`, notifyUrl: `${baseUrl}/webhooks/${provider.method}`,
-        returnUrl: `${baseUrl}${safeReturnPath(body.returnPath)}?paid=${r.outTradeNo}`, openId,
+        returnUrl: `${baseUrl}${safeReturnPath(body.returnPath)}?paid=${r.outTradeNo}`, openId, appId: inMiniProgram ? payAppId : undefined,
       });
+      // Without the openid WeChat would fall back to a QR code, which a guest cannot scan with the phone showing it.
+      if (inMiniProgram && charge.kind === 'qr') throw new Error('no WeChat openid for the mini program, please reopen it');
       return { ...charge, outTradeNo: r.outTradeNo, amount: r.pay };
     } catch (e) {
       await markPaymentFailed(db, r.paymentId);

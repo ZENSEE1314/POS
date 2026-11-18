@@ -29,6 +29,8 @@ export interface GuestChargeRequest extends ChargeRequest {
   returnUrl: string;
   /** WeChat openid of the payer for the pay appid; enables in-WeChat JSAPI pay. */
   openId?: string;
+  /** Pay under this appid instead of the provider's own (the mini program's, which the merchant linked in 商户平台). */
+  appId?: string;
 }
 
 /** How the guest's phone completes the payment. */

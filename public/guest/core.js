@@ -42,6 +42,22 @@ export function parseFen(text) {
 export const productName = (p) => (getLang() === 'en' && p.nameEn ? p.nameEn : p.name);
 export const productSubName = (p) => (getLang() === 'en' ? (p.nameEn ? p.name : '') : p.nameEn || '');
 export const isWechatBrowser = () => /MicroMessenger/i.test(navigator.userAgent);
+/** Opened inside our WeChat mini program's web-view (its user agent says miniProgram). */
+export const isMiniProgram = () => window.__wxjs_environment === 'miniprogram' || /miniProgram/i.test(navigator.userAgent);
+
+const WX_SDK_URL = 'https://res.wx.qq.com/open/js/jweixin-1.6.0.js';
+let wxSdk = null;
+/** WeChat's JS-SDK, needed to move from the web-view to a native mini program page (WeChat Pay runs there). */
+export function loadWxSdk() {
+  wxSdk ??= new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = WX_SDK_URL;
+    s.onload = () => resolve(window.wx);
+    s.onerror = () => { wxSdk = null; reject(new Error('WeChat SDK failed to load')); };
+    document.head.append(s);
+  });
+  return wxSdk;
+}
 
 // ---------- session + API ----------
 

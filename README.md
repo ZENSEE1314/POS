@@ -8,7 +8,7 @@ WeChat Pay, Alipay and Douyin (抖音来客) integrations; Postgres; self-monito
 ```bash
 npm install
 node scripts/dev.ts          # http://localhost:3500: simulated payments + demo company (dev only)
-npm test                     # 761 tests on embedded Postgres (PGlite); on a low-memory machine use --test-concurrency=1
+npm test                     # 778 tests on embedded Postgres (PGlite); on a low-memory machine use --test-concurrency=1
 node scripts/test-pg.ts      # same suite through the production `pg` driver over the Postgres wire protocol
 node scripts/simulate.ts http://localhost:3500 dev-admin-key 4 25   # multi-company load simulation + books audit
 ```
@@ -116,6 +116,7 @@ A mobile web page for guests, at `/g/<company code>` (works in WeChat, Alipay, D
 | Login | Variables | Platform requirement |
 |---|---|---|
 | WeChat | `WECHAT_OA_APPID` (defaults to `WECHAT_APPID`), `WECHAT_OA_SECRET` | verified Service Account (服务号); set the 网页授权域名 to your domain, which must be ICP-filed (备案). The Railway domain will not be accepted. |
+| WeChat mini program | `WECHAT_MP_APPID`, `WECHAT_MP_SECRET` | the mini program in `miniprogram/` (see its README); for WeChat Pay inside it, link its AppID to the merchant in 商户平台 → AppID账号管理 |
 | Alipay | uses the `ALIPAY_*` payment app; `ALIPAY_LOGIN=0` turns it off | the app needs 获取会员信息 for nicknames; set the authorisation redirect domain |
 | Douyin | `DOUYIN_CLIENT_KEY`, `DOUYIN_CLIENT_SECRET` | approved Douyin Open Platform web app with `user_info` scope and the redirect domain |
 | Phone (SMS) | `ALIYUN_SMS_ACCESS_KEY_ID`, `ALIYUN_SMS_ACCESS_KEY_SECRET`, `ALIYUN_SMS_SIGN_NAME`, `ALIYUN_SMS_TEMPLATE_CODE` | Aliyun SMS with an approved signature and a verification-code template using `${code}` |

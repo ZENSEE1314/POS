@@ -70,16 +70,17 @@ export class WechatProvider implements PayProvider {
   /** Inside WeChat with the payer's openid: JSAPI pay; otherwise a Native QR the guest long-presses or scans. */
   async createGuestCharge(req: GuestChargeRequest): Promise<GuestCharge> {
     if (!req.openId) return { kind: 'qr', qrContent: (await this.createCharge(req)).qrContent };
-    const json = await this.order(JSAPI_PATH, req, { payer: { openid: req.openId } });
+    const appId = req.appId ?? this.cfg.appId;
+    const json = await this.order(JSAPI_PATH, req, { appid: appId, payer: { openid: req.openId } });
     if (!json.prepay_id) throw new Error('wechat jsapi order returned no prepay_id');
-    return { kind: 'jsapi', params: this.jsapiParams(json.prepay_id) };
+    return { kind: 'jsapi', params: this.jsapiParams(json.prepay_id, undefined, undefined, appId) };
   }
 
-  /** Parameters for WeixinJSBridge getBrandWCPayRequest; paySign covers appId, timeStamp, nonceStr and package. */
-  jsapiParams(prepayId: string, timestamp = Math.floor(Date.now() / 1000), nonce = randomBytes(16).toString('hex')): Record<string, string> {
+  /** Parameters for WeixinJSBridge getBrandWCPayRequest or wx.requestPayment; paySign covers appId, timeStamp, nonceStr and package. */
+  jsapiParams(prepayId: string, timestamp = Math.floor(Date.now() / 1000), nonce = randomBytes(16).toString('hex'), appId = this.cfg.appId): Record<string, string> {
     const pkg = `prepay_id=${prepayId}`;
-    const paySign = createSign('RSA-SHA256').update(`${this.cfg.appId}\n${timestamp}\n${nonce}\n${pkg}\n`).sign(this.cfg.privateKeyPem, 'base64');
-    return { appId: this.cfg.appId, timeStamp: String(timestamp), nonceStr: nonce, package: pkg, signType: 'RSA', paySign };
+    const paySign = createSign('RSA-SHA256').update(`${appId}\n${timestamp}\n${nonce}\n${pkg}\n`).sign(this.cfg.privateKeyPem, 'base64');
+    return { appId, timeStamp: String(timestamp), nonceStr: nonce, package: pkg, signType: 'RSA', paySign };
   }
 
   parseNotify(headers: Record<string, string | undefined>, rawBody: string): NotifyResult {

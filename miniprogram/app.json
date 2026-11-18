@@ -1,0 +1,28 @@
+{
+  "pages": [
+    "pages/home/home",
+    "pages/scan/scan",
+    "pages/me/me",
+    "pages/web/web",
+    "pages/pay/pay"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#120e24",
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "夜场会员",
+    "backgroundColor": "#120e24"
+  },
+  "tabBar": {
+    "color": "#b7aed4",
+    "selectedColor": "#f3b52f",
+    "backgroundColor": "#1d1838",
+    "borderStyle": "black",
+    "list": [
+      { "pagePath": "pages/home/home", "text": "首页" },
+      { "pagePath": "pages/scan/scan", "text": "扫码点单" },
+      { "pagePath": "pages/me/me", "text": "我的" }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

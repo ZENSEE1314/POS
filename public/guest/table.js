@@ -2,6 +2,7 @@
 import { t, tOr } from './i18n.js';
 import {
   html, raw, setHtml, fmtMoney, fmtBottles, parseFen, productName, productSubName, session, get, post, sheet, toast, toastError, busy, skeleton, isWechatBrowser,
+  isMiniProgram, loadWxSdk,
 } from './core.js';
 import { ensureSignedIn, verifyPhone } from './login.js';
 import { requestsHtml, onCancelRequest } from './extras.js';
@@ -388,6 +389,8 @@ function billHtml(bill, signedIn, justPaid) {
 export async function openPay(payPath, due, company, onDone) {
   if (due <= 0) return;
   const { payments } = session.config;
+  // WeChat does not allow Alipay inside a mini program.
+  const inMp = isMiniProgram();
   let wallet = null;
   if (session.customer?.phone) {
     try { wallet = (await get(`/api/guest/account/${encodeURIComponent(company)}`)).wallet; } catch { /* the wallet button just stays hidden */ }
@@ -399,7 +402,7 @@ export async function openPay(payPath, due, company, onDone) {
       <p class="g-error" role="alert" hidden></p>
       <div class="g-paybtns">
         ${payments.wechat && html`<button type="button" class="g-btn g-btn--primary" data-method="wechat">${t('pay.wechat')}</button>`}
-        ${payments.alipay && html`<button type="button" class="g-btn g-btn--primary" data-method="alipay">${t('pay.alipay')}</button>`}
+        ${payments.alipay && !inMp && html`<button type="button" class="g-btn g-btn--primary" data-method="alipay">${t('pay.alipay')}</button>`}
         ${session.customer?.phone
           ? wallet && html`<button type="button" class="g-btn" data-method="member">${t('pay.wallet', { balance: fmtMoney(wallet.balance) })}</button>`
           : html`<button type="button" class="g-btn" data-verify>${t('pay.walletNoPhone')}</button>`}
@@ -419,6 +422,10 @@ export async function openPay(payPath, due, company, onDone) {
     if (await verifyPhone()) await openPay(payPath, due, company, onDone);
     return;
   }
+  if (inMp && choice.method === 'wechat') {
+    await payInMiniProgram(payPath, choice.amount);
+    return;
+  }
   const r = await post(payPath, { method: choice.method, amount: choice.amount, returnPath: location.pathname });
   if (r.kind === 'done') {
     toast(t('pay.done'), 'success');
@@ -427,6 +434,20 @@ export async function openPay(payPath, due, company, onDone) {
   }
   await completeCharge(r, choice.method);
   await onDone();
+}
+
+/**
+ * wx.requestPayment only works on a native page, so the mini program's pay page takes over. When paid it reopens
+ * this page with ?paid=<outTradeNo>, which confirms the payment like the Alipay return does.
+ */
+async function payInMiniProgram(payPath, amount) {
+  try {
+    const wx = await loadWxSdk();
+    const q = new URLSearchParams({ path: payPath, amount: String(amount), back: location.pathname });
+    wx.miniProgram.navigateTo({ url: `/pages/pay/pay?${q}` });
+  } catch (e) {
+    toastError(e);
+  }
 }
 
 /** Drives whatever the provider returned until the payment is confirmed (or the guest gives up). */

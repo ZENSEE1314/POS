@@ -1,0 +1,6 @@
+<view class="wrap">
+  <text class="title">扫码点单</text>
+  <text class="hint">扫描桌上的台位码，即可点单、呼叫服务员、点歌和买单。</text>
+  <button class="btn btn-primary" bindtap="scan">扫一扫</button>
+  <text wx:if="{{error}}" class="error">{{error}}</text>
+</view>

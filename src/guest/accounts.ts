@@ -10,6 +10,9 @@ import { mergeGuestExtras } from './loyalty.ts';
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const AUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const LOGIN_CODE_TTL_MS = 2 * 60 * 1000;
+const HANDOFF_TTL_MS = 60 * 1000;
+/** Marks a mini program hand-off code; never a valid cookie hash (64 hex), so the two kinds cannot be swapped. */
+const HANDOFF_MARK = 'mp-handoff';
 const OTP_TTL_MS = 5 * 60 * 1000;
 const OTP_RESEND_MS = 60 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
@@ -106,7 +109,26 @@ export async function exchangeLoginCode(db: Db, code: unknown, nonce: string | u
   return startSession(db, row.customer_id);
 }
 
-async function startSession(db: Db, customerId: number): Promise<{ token: string; customer: Customer }> {
+/**
+ * The mini program opens the customer app in a web-view, which has its own storage. It asks for this one-time code
+ * with its own session and puts it in the web-view URL fragment, so the 30-day token itself never appears in a URL.
+ */
+export async function createHandoffCode(db: Db, customerId: number): Promise<{ code: string }> {
+  const code = newSecret();
+  await db.run('DELETE FROM guest_login_codes WHERE expires_at < ?', [Date.now()]);
+  await db.run('INSERT INTO guest_login_codes (code_hash, customer_id, expires_at, nonce_hash) VALUES (?,?,?,?)',
+    [sha256(code), customerId, Date.now() + HANDOFF_TTL_MS, HANDOFF_MARK]);
+  return { code };
+}
+
+export async function exchangeHandoffCode(db: Db, code: unknown): Promise<{ token: string; customer: Customer }> {
+  if (typeof code !== 'string' || !code) throw new DomainError('code required', 422);
+  const row = await db.one('DELETE FROM guest_login_codes WHERE code_hash = ? AND nonce_hash = ? RETURNING customer_id, expires_at', [sha256(code), HANDOFF_MARK]);
+  if (!row || row.expires_at < Date.now()) throw new DomainError('sign-in link expired, please reopen the mini program', 401);
+  return startSession(db, row.customer_id);
+}
+
+export async function startSession(db: Db, customerId: number): Promise<{ token: string; customer: Customer }> {
   const token = newSecret();
   await db.run('INSERT INTO guest_sessions (token_hash, customer_id, expires_at, created_at) VALUES (?,?,?,?)', [sha256(token), customerId, Date.now() + SESSION_TTL_MS, Date.now()]);
   return { token, customer: await getCustomer(db, customerId) };
