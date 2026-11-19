@@ -18,6 +18,8 @@ import { mountCounter } from './counter.js';
 import { mountStock } from './stock.js';
 import { mountOffice, openJoinDialog } from './office.js';
 import { mountHostDesk } from './host-desk.js';
+import { mountDisplay } from './display.js';
+import { mountQueue } from './queue.js';
 import { mountHome } from './home.js';
 import { hasModule, BUSINESS_TYPES, BUSINESS_CHANGED } from './business.js';
 import { initOffline, syncPillHtml, mountSyncPill, openSyncPanel, syncState, syncNow, forgetEverything, offlineSignedIn } from './offline/index.js';
@@ -27,16 +29,20 @@ import { clockSlot, newsSlot, refreshHeaderWidgets, clockActions } from './clock
 
 const COMPANY_KEY = 'nightpos.company';
 const SIGNUP_PIN_MIN = 6;
+const PARTNER_REF_KEY = 'nightpos.ref';
+const PARTNER_NOT_FOUND = 'partner code not found';
 // `module`: the tab only shows when the company has that module switched on.
 const TABS = [
   { id: 'home', mount: mountHome },
   { id: 'floor', mount: mountFloor, module: 'tables' },
   { id: 'host', mount: mountHostDesk, perm: 'table.open', module: 'tables' },
+  { id: 'queue', mount: mountQueue, perm: 'table.open' },
   { id: 'counter', mount: mountCounter, perm: 'order.add', module: 'counter' },
   { id: 'orders', mount: mountGuestOrders, perm: 'order.add', module: 'guestApp' },
+  { id: 'display', mount: mountDisplay, perm: 'order.add' },
   { id: 'bookings', mount: mountBookings, module: 'bookings' },
   { id: 'stash', mount: mountStash, module: 'stash' },
-  { id: 'stock', mount: mountStock, perm: 'admin.write', module: 'purchasing' },
+  { id: 'stock', mount: mountStock, perm: 'admin.write' },
   { id: 'members', mount: mountMembers },
   { id: 'office', mount: mountOffice },
   { id: 'reports', mount: mountReports, perm: 'audit.read' },
@@ -125,13 +131,45 @@ const openSignup = () => formDialog({
     { name: 'ownerName', label: t('signup.ownerName'), required: true },
     { name: 'ownerUsername', label: t('login.username'), required: true },
     { name: 'ownerPin', label: t('login.pin'), type: 'pin', required: true, min: SIGNUP_PIN_MIN, hint: t('signup.pinHint') },
+    { name: 'partnerCode', label: t('signup.partnerCode'), value: partnerRef() ?? '', hint: t('signup.partnerCodeHint') },
   ],
   submit: 'signup.submit',
   onSubmit: async (v) => {
-    await post('/api/signup', v);
+    const body = { ...v, partnerCode: v.partnerCode || undefined };
+    try {
+      await post('/api/signup', body);
+    } catch (e) {
+      if (e.message === PARTNER_NOT_FOUND) markPartnerCodeBad();
+      throw e;
+    }
+    writeStore(sessionStorage, PARTNER_REF_KEY, null);
     await loginWith(v.code, v.ownerUsername, v.ownerPin);
   },
 });
+
+/** A reseller's link (…?ref=CODE, also kept by the sales website in sessionStorage) fills in the partner code. */
+function partnerRef() {
+  const fromUrl = new URLSearchParams(location.search).get('ref');
+  if (fromUrl) writeStore(sessionStorage, PARTNER_REF_KEY, fromUrl.trim());
+  return readStore(sessionStorage, PARTNER_REF_KEY);
+}
+
+function markPartnerCodeBad() {
+  const input = document.querySelector('dialog[open] [name=partnerCode]');
+  if (!input) return;
+  let note = document.getElementById('partner-code-error');
+  if (!note) {
+    note = document.createElement('p');
+    note.id = 'partner-code-error';
+    note.className = 'field-error';
+    input.after(note);
+    input.addEventListener('input', () => { note.remove(); input.removeAttribute('aria-invalid'); }, { once: true });
+  }
+  note.textContent = t('signup.partnerCodeBad');
+  input.setAttribute('aria-invalid', 'true');
+  input.setAttribute('aria-describedby', note.id);
+  input.focus();
+}
 
 // ---------- shell ----------
 

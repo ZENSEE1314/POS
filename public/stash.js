@@ -4,6 +4,7 @@ import { get, post, can, app } from './session.js';
 import { html, setHtml, fmtDate, fmtBottles, productName, DAY } from './util.js';
 import { delegate, formDialog, dataTable, badge, emptyState, notifyError, toast } from './ui.js';
 import { printStashSlip } from './print/hooks.js';
+import { mountForfeit } from './stash-forfeit.js';
 
 export function mountStash(root) {
   const state = { q: '', results: null, products: [], tables: [], stores: [] };
@@ -46,7 +47,9 @@ export function mountStash(root) {
           <input id="stash-q" name="q" type="search" value="${state.q}" placeholder="${t('stash.searchPlaceholder')}" autocomplete="off"></div>
         <button type="submit" class="btn btn--primary">${t('common.search')}</button>
       </form>
-      <div class="panel" id="stash-results">${resultsHtml()}</div></section>`);
+      <div class="panel" id="stash-results">${resultsHtml()}</div>
+      ${can('admin.write') && html`<div id="stash-forfeit"></div>`}</section>`);
+    if (can('admin.write')) mountForfeit(root.querySelector('#stash-forfeit')).catch(notifyError);
   }
 
   async function search(q = state.q) {

@@ -26,6 +26,8 @@ const en = {
   'signup.title': 'Create a company', 'signup.intro': 'Sets up your company, first store and an owner account.',
   'signup.company': 'Company name', 'signup.code': 'Company code', 'signup.codeHint': 'Staff type this when signing in. 2 to 31 letters, digits or hyphens.',
   'signup.store': 'First store name', 'signup.ownerName': 'Owner name', 'signup.pinHint': 'At least 6 digits.',
+  'signup.partnerCode': 'Partner code (optional)', 'signup.partnerCodeHint': 'From the reseller who introduced you, if any.',
+  'signup.partnerCodeBad': 'This partner code does not exist. Check it or leave it empty.',
   'signup.submit': 'Create and sign in',
 
   'shell.store': 'Store', 'shell.logout': 'Sign out', 'shell.nav': 'Main sections',
@@ -377,6 +379,8 @@ const zh = {
   'signup.title': '创建公司', 'signup.intro': '将创建公司、第一家门店和店主账号。',
   'signup.company': '公司名称', 'signup.code': '公司代码', 'signup.codeHint': '员工登录时需要输入。2 至 31 位字母、数字或连字符。',
   'signup.store': '第一家门店名称', 'signup.ownerName': '店主姓名', 'signup.pinHint': '至少 6 位数字。',
+  'signup.partnerCode': '渠道码（选填）', 'signup.partnerCodeHint': '如由渠道商推荐，请填写对方提供的渠道码。',
+  'signup.partnerCodeBad': '渠道码不存在，请检查或留空。',
   'signup.submit': '创建并登录',
 
   'shell.store': '门店', 'shell.logout': '退出登录', 'shell.nav': '主要栏目',
@@ -757,6 +761,26 @@ const ERRORS_ZH = {
   'purchase order not found': '找不到该采购单。',
   'choose a product or a category, not both': '商品和分类只能选一个。',
   'promotion not found': '找不到该促销。',
+  'partner code not found': '找不到这个渠道码，请检查或留空。',
+  'a stocktake is already open for this store; finish or cancel it first': '本店已有进行中的盘点，请先完成或取消。',
+  'stocktake not found': '找不到该盘点单。',
+  'counts must be whole numbers, 0 or more': '盘点数量必须是 0 或正整数。',
+  'pick another store to send to': '请选择其他门店作为调入方。',
+  'add at least one product': '请至少添加一个商品。',
+  'store not found': '找不到该门店。',
+  'each quantity must be a whole number above 0': '数量必须是大于 0 的整数。',
+  'each product only once per transfer': '同一商品在一张调拨单中只能出现一次。',
+  'transfer not found': '找不到该调拨单。',
+  'pick at least one bottle': '请至少选择一瓶。',
+  'ticket not found or already done': '该号码不存在或已处理。',
+  'title is required': '请填写标题。',
+  'video link must start with https://': '视频链接必须以 https:// 开头。',
+  'lesson not found': '找不到该课程。',
+  'name is required': '请填写名称。',
+  'the set must end after it starts': '结束时间必须晚于开始时间。',
+  'performer not found': '找不到该艺人。',
+  'set not found': '找不到该演出场次。',
+  'no such items on this store': '本店没有这些出品项。',
 };
 
 const ERROR_PATTERNS_ZH = [
@@ -764,6 +788,10 @@ const ERROR_PATTERNS_ZH = [
   [/^(\w+) payments are not configured for this server$/, (m) => `服务器尚未配置 ${m[1]} 支付。`],
   [/needs at least (\d+)/, (m) => `PIN 码至少需要 ${m[1]} 位。`],
   [/^the (\w+) module is switched off for this company$/, () => '本公司未开启这个功能模块。'],
+  [/^this (stocktake|transfer) is (\w+)$/, (m) => `该${m[1] === 'stocktake' ? '盘点单' : '调拨单'}已${m[2] === 'closed' || m[2] === 'received' ? '完成' : '取消'}，无法操作。`],
+  [/^only (\d+) of (.+) in stock$/, (m) => `${m[2]} 库存只有 ${m[1]}。`],
+  [/^add these products to this store first: (.+)$/, (m) => `请先在本店添加这些商品：${m[1]}`],
+  [/^bottle (\d+) is not an expired bottle in this store$/, () => '所选存酒不是本店的过期存酒，请刷新后重试。'],
   [/^(order|bill|booking|stash) is (\w+)$/, (m) => `当前状态为 ${m[2]}，无法执行此操作。`],
 ];
 

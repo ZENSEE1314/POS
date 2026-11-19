@@ -1,11 +1,17 @@
-// Stock view: items below their reorder level, purchase orders (draft -> ordered -> received) and suppliers.
+// Stock view: items below their reorder level, purchase orders (draft -> ordered -> received), suppliers, stocktakes and
+// transfers between stores (the last two live in stock-count.js).
 import { t } from './i18n.js';
 import { get, post, patch } from './session.js';
 import { html, setHtml, fmtMoney, fmtDateTime, productName, toYuanInput } from './util.js';
 import { delegate, formDialog, confirmDialog, dataTable, badge, skeleton, notifyError, pressed, toast } from './ui.js';
-import { isWeighed, fmtStock, fmtKg } from './business.js';
+import { isWeighed, fmtStock, fmtKg, hasModule } from './business.js';
+import { mountStocktakes, mountTransfers, otherStores } from './stock-count.js';
 
-const SECTIONS = ['low', 'orders', 'suppliers'];
+const PURCHASING_SECTIONS = ['low', 'orders', 'suppliers'];
+// Counting stock is for every venue; suppliers and purchase orders only when the purchasing module is on.
+const sections = () => [...(hasModule('purchasing') ? PURCHASING_SECTIONS : []), 'stocktake'];
+/** Sections that render and wire themselves into the body element. */
+const SELF_MOUNTED = { stocktake: mountStocktakes, transfers: mountTransfers };
 const PO_ROWS = 8;
 const MILLI = 1000;
 const STATUS_TONE = { draft: 'neutral', ordered: 'warning', received: 'success', cancelled: 'neutral' };
@@ -50,6 +56,7 @@ export function mountStock(root) {
   };
 
   async function reload() {
+    if (SELF_MOUNTED[active]) { await SELF_MOUNTED[active](root.querySelector('#st-body')); return; }
     state.rows = await loaders[active]();
     setHtml(root.querySelector('#st-body'), html`<div class="view-bar"><h3 class="section-title">${t(`stock.${active}`)}</h3>
       <div class="row">${addButtons[active]}</div></div><div class="panel">${views[active]()}</div>`);
@@ -125,11 +132,19 @@ export function mountStock(root) {
   const rowOf = (el) => state.rows.find((r) => r.id === Number(el.dataset.id));
   const markActive = () => root.querySelectorAll('[data-action=section]').forEach((b) => b.setAttribute('aria-pressed', pressed(b.dataset.id === active)));
 
+  const chipsHtml = (ids) => html`${ids.map((id) =>
+    html`<button type="button" class="chip" data-action="section" data-id="${id}" aria-pressed="${pressed(id === active)}">${t(`stock.${id}`)}</button>`)}`;
+
+  if (!sections().includes(active)) active = sections()[0];
   setHtml(root, html`<section aria-labelledby="st-title"><h2 id="st-title" class="view-title">${t('stock.title')}</h2>
-    <div class="chips" role="group" aria-label="${t('stock.title')}">${SECTIONS.map((id) =>
-      html`<button type="button" class="chip" data-action="section" data-id="${id}" aria-pressed="${pressed(id === active)}">${t(`stock.${id}`)}</button>`)}</div>
+    <div class="chips" id="st-chips" role="group" aria-label="${t('stock.title')}">${chipsHtml(sections())}</div>
     <div id="st-body" aria-live="polite">${skeleton(5)}</div></section>`);
   reload().catch(notifyError);
+  // Transfers only make sense for a company with more than one store.
+  otherStores().then(({ count }) => {
+    const chips = root.querySelector('#st-chips');
+    if (count > 1 && chips) setHtml(chips, chipsHtml([...sections(), 'transfers']));
+  }).catch(() => { /* offline: the section just stays hidden */ });
 
   delegate(root, {
     click: {

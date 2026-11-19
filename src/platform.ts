@@ -4,6 +4,7 @@ import { hashPin } from './auth.ts';
 import { applyGuestPreset, BUSINESS_TYPES, isBusinessType, MODULE_PRESETS } from './business.ts';
 import type { BusinessType } from './business.ts';
 import { placeOf } from './hq.ts';
+import { resellerIdForCode } from './resellers.ts';
 
 const CODE_PATTERN = /^[a-z0-9][a-z0-9-]{1,30}$/i;
 const USERNAME_PATTERN = /^[a-z0-9._-]{2,32}$/i;
@@ -19,6 +20,8 @@ export interface NewCompany {
   ownerPin: string;
   douyinPoiId?: string;
   businessType?: BusinessType;
+  /** A reseller's partner code (渠道码): the new company is credited to that reseller. */
+  partnerCode?: string;
   city?: string;
   address?: string;
   postalCode?: string;
@@ -38,9 +41,11 @@ export async function createCompany(db: Db, input: NewCompany, { requireAddress 
   const type = input.businessType ?? 'bar';
   if (!isBusinessType(type)) throw new DomainError(`businessType must be one of ${BUSINESS_TYPES.join(', ')}`, 422);
   const place = placeOf(input, requireAddress);
+  const resellerId = await resellerIdForCode(db, input.partnerCode);
   return db.tx(async (t) => {
     if (await t.one('SELECT 1 AS x FROM tenants WHERE lower(code) = lower(?)', [input.code])) throw new DomainError('company code already taken', 409);
-    const tenantId = await t.insert('INSERT INTO tenants (name, code, created_at, business_type) VALUES (?,?,?,?)', [input.name.trim(), input.code, Date.now(), type]);
+    const tenantId = await t.insert('INSERT INTO tenants (name, code, created_at, business_type, reseller_id) VALUES (?,?,?,?,?)',
+      [input.name.trim(), input.code, Date.now(), type, resellerId]);
     await applyGuestPreset(t, tenantId, type);
     const storeId = await t.insert('INSERT INTO stores (tenant_id, name, code, douyin_poi_id, created_at, city, address, postal_code) VALUES (?,?,?,?,?,?,?,?)',
       [tenantId, input.storeName.trim(), 'MAIN', input.douyinPoiId ?? null, Date.now(), place.city, place.address, place.postalCode]);

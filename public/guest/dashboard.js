@@ -7,6 +7,7 @@ import { requestsHtml, requestSummary, onCancelRequest } from './extras.js';
 import { orderCard } from './shop.js';
 import { openPay, lastTable } from './table.js';
 import { icon } from './icons.js';
+import { showPerformers } from './performers.js';
 
 addStrings({
   en: {
@@ -164,6 +165,7 @@ function quickActions(v, store) {
     store && (v.orderAhead ? { href: `${at}/order`, icon: 'bag', label: t('db.order') } : { href: `${at}/menu`, icon: 'menu', label: t('db.menu') }),
     store && v.orderAhead && { href: `${at}/menu`, icon: 'menu', label: t('db.menu') },
     store && v.bookings !== false && { href: `${at}/book`, icon: 'calendar', label: t('db.book') },
+    v.tables !== false && { href: `${co}/queue`, icon: 'users', label: t('qu.home') },
     f.song && { href: `${co}/songs`, icon: 'music', label: t('db.songs') },
     (f.games || (f.loyalty && f.spin)) && { href: `${co}/games`, icon: 'dice', label: t('db.games') },
     f.loyalty && f.spin && { href: `${co}/spin`, icon: 'wheel', label: t('db.spin') },
@@ -273,6 +275,7 @@ export async function mountDashboard(root, v, { store, navigate, newsHtml, cover
     ${whereHtml(store)}
     ${wifiHtml(store)}
     <h2 class="g-cat">${t('db.quick')}</h2>${quickGrid(quickActions(v, store))}
+    <div data-performers></div>
     ${newsHtml}
     <div data-recent></div>`);
   root.addEventListener('click', (e) => {
@@ -288,6 +291,7 @@ export async function mountDashboard(root, v, { store, navigate, newsHtml, cover
     rememberStore(v, next);
     navigate(`${co}/${enc(next.code)}`);
   });
+  void showPerformers(root.querySelector('[data-performers]'), v.company.code, v.stores.length > 1);
   const memberEl = root.querySelector('[data-member]');
   if (!session.customer) {
     const join = document.createElement('div');

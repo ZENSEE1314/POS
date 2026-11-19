@@ -4,6 +4,7 @@
 //   /g/<company>/me                  profile and settings (/account is the old address)
 //   /g/<company>/wallet|history|activity|songs|invite      member pages
 //   /g/<company>/rewards|spin|events|games|pets|support   venue-wide extras
+//   /g/<company>/queue (or /g/<company>#queue, the staff QR) take a queue number and watch it
 //   /g/<company>/<store>             the dashboard with that location chosen
 //   /g/<company>/<store>/menu        browse the menu
 //   /g/<company>/<store>/book        book a table
@@ -18,6 +19,7 @@ import { mountGames } from './games.js';
 import { mountShopOrder } from './shop.js';
 import { mountActivity, mountBottles, mountDashboard, mountHistory, mountMe, mountSongs, mountWallet, pickedStore, rememberStore } from './dashboard.js';
 import { applyTheme } from './themes.js';
+import { mountQueue } from './queue.js';
 import { icon } from './icons.js';
 
 /** Venue-wide screens; these words are never store codes. */
@@ -37,7 +39,9 @@ const EXTRAS = {
   games: (root, ctx) => mountGames(root, { spinHref: ctx.features.loyalty && ctx.features.spin ? `/g/${enc(ctx.company)}/spin` : null }),
   pets: (root, ctx) => mountPets(root, ctx),
   support: (root, ctx) => mountSupport(root, ctx),
+  queue: (root, ctx) => mountQueue(root, ctx),
 };
+const QUEUE_HASH = '#queue';
 
 const appEl = document.getElementById('app');
 const venueCache = new Map();
@@ -219,7 +223,8 @@ function useVenue(v, h) {
 async function route() {
   cleanup?.();
   cleanup = null;
-  const [company, second, third, fourth] = parts();
+  const [company, path2, third, fourth] = parts();
+  const second = path2 ?? (location.hash === QUEUE_HASH ? 'queue' : undefined);
   header = { title: '', subtitle: '', company: company ?? '', nav: null, logo: null };
   if (!company) applyTheme(null);
   let root = frame();
@@ -231,7 +236,10 @@ async function route() {
       useVenue(v, { title: v.company.name, subtitle: '', company: v.company.code, nav: tabsFor(v) });
       root = frame();
       void claimPendingReferral(v.company.code);
-      if (EXTRAS[second]) await EXTRAS[second](root, { company: v.company.code, stores: v.stores, features: v.features ?? {}, navigate });
+      if (EXTRAS[second]) {
+        const stop = await EXTRAS[second](root, { company: v.company.code, stores: v.stores, features: v.features ?? {}, navigate });
+        if (typeof stop === 'function') cleanup = stop;
+      }
       else await home(root, v, pickedStore(v));
       return;
     }

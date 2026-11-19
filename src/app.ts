@@ -11,6 +11,7 @@ import { addLine, attachMember, getBill, listOpenTableless, openCounterSale, ope
 import { businessOf, requireModule, updateBusiness } from './business.ts';
 import { scanCode } from './retail.ts';
 import { registerStockRoutes } from './stock-routes.ts';
+import { registerExtrasRoutes } from './extras-routes.ts';
 import { registerPeopleRoutes } from './people-routes.ts';
 import { registerOfficeRoutes } from './office-routes.ts';
 import { requestJoin } from './office.ts';
@@ -410,6 +411,7 @@ export function createAppWithMetrics(db: Db, env: NodeJS.ProcessEnv = process.en
   registerPeopleRoutes(route, { num });
   registerOfficeRoutes(route, { num });
   registerTakingsRoutes(route, { num });
+  registerExtrasRoutes(route, { num });
 
   registerGuestRoutes(route, {
     db, payProviders: providers, baseUrl, isMock, num, sms: buildSms(env), smsPerHour: env.GUEST_SMS_PER_HOUR ? Number(env.GUEST_SMS_PER_HOUR) : undefined,

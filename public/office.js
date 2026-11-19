@@ -4,6 +4,7 @@ import { t, tOr } from './i18n.js';
 import { get, post, patch, put, can } from './session.js';
 import { html, setHtml, fmtMoney, fmtDateTime, fmtDate, toDateInput, dayRange, toYuanInput } from './util.js';
 import { delegate, formDialog, confirmDialog, dataTable, badge, skeleton, toast, notifyError, pressed } from './ui.js';
+import { academy } from './lessons.js';
 
 const REQUEST_KINDS = ['leave', 'missed_clock', 'expense', 'purchase', 'other', 'resign'];
 const JOINABLE_ROLES = ['host', 'waiter', 'cashier', 'manager'];
@@ -13,6 +14,7 @@ const STATUS_TONE = { pending: 'warning', approved: 'success', rejected: 'danger
 const SECTIONS = [
   { id: 'requests' },
   { id: 'customers' },
+  { id: 'academy' },
   { id: 'approvals', perm: 'admin.write' },
   { id: 'joins', perm: 'admin.write' },
   { id: 'departments', perm: 'admin.write' },
@@ -263,7 +265,7 @@ async function tips(el, form) {
 
 // ---------- mount ----------
 
-const loaders = { requests, customers, approvals, joins, departments, assign, performance, comps, tips };
+const loaders = { requests, customers, academy, approvals, joins, departments, assign, performance, comps, tips };
 
 export function mountOffice(root) {
   const sections = SECTIONS.filter((s) => !s.perm || can(s.perm));

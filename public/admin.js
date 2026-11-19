@@ -10,12 +10,14 @@ import { guestAdminSections } from './guest-admin.js';
 import { businessAdminSections, visibleSectionIds } from './business-admin.js';
 import { broadcastSection } from './broadcast-admin.js';
 import { botSection } from './bot-admin.js';
+import { performerSection } from './performers-admin.js';
+import { postersSection } from './posters-admin.js';
 import { hasModule, isWeighed, fmtStock, fmtKg } from './business.js';
 
 const TABLE_KINDS = ['bar', 'booth', 'room'];
 const RULE_ROLES = ['sales', 'waiter'];
 const BPS_PER_PERCENT = 100;
-const SECTION_IDS = ['business', 'tables', 'products', 'promotions', 'rules', 'staff', 'broadcasts', 'printers', 'guestApp', 'bot', 'appDesign', 'locations', 'guestPasswords', 'events', 'rewards', 'prizes'];
+const SECTION_IDS = ['business', 'tables', 'products', 'promotions', 'rules', 'staff', 'broadcasts', 'printers', 'guestApp', 'bot', 'appDesign', 'locations', 'guestPasswords', 'events', 'rewards', 'prizes', 'performers', 'posters'];
 const STATIONS = ['', 'bar', 'kitchen'];
 const UNITS = ['each', 'kg'];
 const SECTION_LABELS = { business: 'biz.section', promotions: 'promo.section' };
@@ -90,6 +92,8 @@ export function mountAdmin(root) {
     ...businessAdminSections(() => reload()),
     ...broadcastSection(() => reload()),
     ...botSection(() => reload()),
+    ...performerSection(() => reload()),
+    ...postersSection(),
   };
 
   const reload = async () => {
@@ -106,6 +110,8 @@ export function mountAdmin(root) {
       <div class="row">${active === 'tables' && html`<button type="button" class="btn btn--ghost" data-action="venueQr">${t('admin.venueQr')}</button>`}
       ${sec.add && html`<button type="button" class="btn btn--primary" data-action="add">${t(sec.add)}</button>`}</div></div>
       <div class="panel">${sec.view(state.rows)}</div>`);
+    // Sections with live controls (the poster canvas) wire them once their markup is on the page.
+    sec.mounted?.(root.querySelector('#ad-body'));
   }
 
   const tableDialog = (x) => formDialog({

@@ -474,3 +474,14 @@ div.g-menu__row { cursor: default; }
 .g-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .g-fieldset legend { padding: 0; margin-bottom: var(--space-1); }
 .g-chips--wrap { flex-wrap: wrap; overflow: visible; }
+
+/* Queue (queue.js) and tonight's performers (performers.js) */
+.g-queue { text-align: center; }
+.g-queue--called { border-color: var(--color-primary); box-shadow: var(--shadow-glow); }
+.g-queue__num { font-family: var(--font-display); font-size: calc(var(--text-3xl) * 2); font-weight: var(--weight-bold); line-height: 1.1; color: var(--color-accent-text); }
+.g-queue__ahead { font-size: var(--text-lg); font-weight: var(--weight-bold); color: var(--color-fg-strong); }
+.g-perfs { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
+.g-perf { display: flex; align-items: flex-start; gap: var(--space-3); }
+.g-perf__icon { flex: none; width: 24px; height: 24px; color: var(--color-accent-text); }
+.g-perf__body { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+.g-perf__bio { font-size: var(--text-sm); color: var(--color-muted); }

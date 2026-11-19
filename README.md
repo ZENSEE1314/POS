@@ -8,7 +8,7 @@ WeChat Pay, Alipay and Douyin (抖音来客) integrations; Postgres; self-monito
 ```bash
 npm install
 node scripts/dev.ts          # http://localhost:3500: simulated payments + demo company (dev only)
-npm test                     # 778 tests on embedded Postgres (PGlite); on a low-memory machine use --test-concurrency=1
+npm test                     # 814 tests on embedded Postgres (PGlite); on a low-memory machine use --test-concurrency=1
 node scripts/test-pg.ts      # same suite through the production `pg` driver over the Postgres wire protocol
 node scripts/simulate.ts http://localhost:3500 dev-admin-key 4 25   # multi-company load simulation + books audit
 ```
@@ -188,6 +188,17 @@ http://127.0.0.1; use Chrome or Edge (details in `bridge/README.md`). Pending ti
   - *My customers*: the sales rep on a table becomes the owner of that customer the first time. Dormant customers (not back in 14 / 30 / 60 / 90 days) for calling back. *Assign customers* (manager, owner) moves customers between reps or back to the venue.
   - *Performance* (manager, finance, owner): sales, tables, comps, commission and tips by department and a staff ranking for any dates. *Comp allowances* (manager, owner): how much each person may give away per month at menu price (签送额度) without asking; managers comp freely. *Tips*: every tip and reward with table, method and who recorded it.
 - **Tips and rewards** (小费 / 打赏) go to the person named and are not sales. **Deposits** (预收款 / 押金) are taken before or on arrival, then put toward the open bill on their table (paid as method `deposit`; anything left stays held) or handed back with a reason.
+
+## Bar display, stock counts, queue, training, singers, resellers
+- **Display** (出品台, tab): every drink and dish on an open bill, grouped by table and oldest first, filtered by bar or kitchen (products with no station count as bar). Tap an item when it is made; it moves to a "just served" strip for 30 minutes where a mistaken tap can be undone. Refreshes every few seconds and can go full screen on a screen behind the bar.
+- **Stocktake** (盘点, Stock tab, which every manager now sees; suppliers and purchase orders there still need the purchasing module): starting one snapshots the system stock of every tracked product; staff type what they counted; closing it moves each counted product by (counted - expected), so stock that moved while counting (sales, transfers) is kept. One open stocktake per store; it can be cancelled.
+- **Transfers** (调拨, Stock tab): send stock to another store of the company (`GET /api/stores` lists them for any signed-in staff). It leaves the sending store at once and is added to the receiving store, matched by product name, when that store presses Receive. The sender can cancel until then, and the stock comes back.
+- **Forfeited bottles** (酒水充公, Stored bottles tab, manager): stored bottles past their keep-until date can be taken by the venue. Full bottles can go back on the shelf as stock; opened ones are written off. It cannot be undone.
+- **Queue** (排队叫号, tab): numbers restart every day at 6 am. Staff take a number for walk-ins, call (the till speaks the number), seat or skip. Guests take a number in the customer app (phone required), see how many parties are ahead and the number being called, and can cancel.
+- **Training** (员工学院, Office tab): managers write lessons (text and an https video link), mark some required, and see who has not read each required lesson; staff read and press "done".
+- **Singers** (驻唱, Admin): performers and their sets per location; the customer app home shows who is on stage now and next.
+- **Marketing posters** (营销海报, Admin): made in the browser from a template, the venue's text and picture, with a QR code to the customer app; download as a story-size or square PNG.
+- **Resellers** (渠道合作, platform operator): `/platform/resellers` gives each partner a code; a company that signs up with that code (or from `/site?ref=CODE`) is credited to the partner, with their commission rate, for paying out. An unknown code is refused at sign-up.
 
 ## Sales website
 `/site` is the public sales page for NightPOS (Chinese with an English switch): the problems it solves, features, devices, getting started, reseller programme, FAQ, and a form for demo, quote, partner and referral requests. Requests are stored in `site_leads` (10 per address per hour) and the operator reads them with `GET /platform/leads?status=new|contacted|won|lost` and updates them with `PATCH /platform/leads/:id {status, note}`. "Free trial" opens the sign-up form at `/?signup=1` when `SIGNUP_OPEN=1`.
