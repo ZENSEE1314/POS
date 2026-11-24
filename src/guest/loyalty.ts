@@ -5,6 +5,7 @@ import type { Actor } from '../auth.ts';
 import { require_, whoOf } from '../auth.ts';
 import { guestSettings, requireFeature } from './settings.ts';
 import { tenantByCode } from './venue.ts';
+import { creditCommission } from '../distribution.ts';
 
 const FEN_PER_YUAN = 100;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -58,6 +59,7 @@ export async function changePoints(t: Db, tenantId: number, customerId: number, 
  * company, the referral bonus is paid to both sides.
  */
 export async function earnForPayment(t: Db, customerId: number, billId: number, paymentId: number, amountFen: number): Promise<void> {
+  await creditCommission(t, customerId, billId, paymentId, amountFen);
   const tenantId = (await t.one('SELECT s.tenant_id FROM bills b JOIN stores s ON s.id = b.store_id WHERE b.id = ?', [billId]))?.tenant_id;
   if (!tenantId) return;
   const s = await guestSettings(t, tenantId);

@@ -32,6 +32,7 @@ import { imageOf, removeImage, saveImage, staffTheme, updateTheme } from './them
 import { dismissQuestion, listFaqs, listQuestions, saveFaq } from './bot.ts';
 import { getWechatOa, saveWechatOa } from './wechat-oa.ts';
 import { FileBody } from '../responses.ts';
+import { applyAsDistributor, distributionAt, joinDistributor, requestPayout } from '../distribution.ts';
 
 const HOUR_MS = 60 * 60_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -299,6 +300,11 @@ export function registerGuestRoutes(route: RouteFn, deps: GuestDeps): void {
   route('POST', '/api/guest/loyalty/:company/redeem', false, signedIn(({ db, params, body }, id) => redeemReward(db, id, params[0], body.rewardId)));
   route('POST', '/api/guest/loyalty/:company/spin', false, signedIn(({ db, params }, id) => spinWheel(db, id, params[0])));
   route('POST', '/api/guest/referral', false, signedIn(({ db, body }, id) => claimReferral(db, id, body.company, body.code)));
+
+  route('GET', '/api/guest/distribution/:company', false, signedIn(({ db, params }, id) => distributionAt(db, id, params[0])));
+  route('POST', '/api/guest/distribution/:company/apply', false, signedIn(({ db, params }, id) => applyAsDistributor(db, id, params[0])));
+  route('POST', '/api/guest/distribution/:company/join', false, signedIn(({ db, params, body }, id) => joinDistributor(db, id, params[0], body.code)));
+  route('POST', '/api/guest/distribution/:company/payout', false, signedIn(({ db, params, body }, id) => requestPayout(db, id, params[0], body)));
 
   route('GET', '/api/guest/pets', false, signedIn(({ db }, id) => listPets(db, id)));
   route('POST', '/api/guest/pets', false, signedIn(({ db, body }, id) => savePet(db, id, null, body)));

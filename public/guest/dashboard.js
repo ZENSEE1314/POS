@@ -171,6 +171,7 @@ function quickActions(v, store) {
     f.loyalty && f.spin && { href: `${co}/spin`, icon: 'wheel', label: t('db.spin') },
     f.loyalty && { href: `${co}/rewards`, icon: 'gift', label: t('db.rewards') },
     f.loyalty && f.referral && { href: `${co}/invite`, icon: 'users', label: t('db.invite') },
+    v.distribution && { href: `${co}/earn`, icon: 'wallet', label: t('ds.home') },
     f.events && { href: `${co}/events`, icon: 'star', label: t('db.events') },
     f.bottle && { href: `${co}/bottles`, icon: 'gift', label: t('db.bottles') },
     f.loyalty && { href: `${co}/rewards`, icon: 'ticket', label: t('db.coupons') },

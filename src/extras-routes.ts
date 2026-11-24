@@ -13,6 +13,7 @@ import {
 } from './venue-extras.ts';
 import { listResellers, resellerCompanies, saveReseller } from './resellers.ts';
 import { tenantByCode } from './guest/venue.ts';
+import { decideDistributor, decidePayout, distributionOverview, saveDistributionSettings, setDistributorRate } from './distribution.ts';
 
 interface Ctx { db: Db; actor: Actor; params: string[]; body: any; query: URLSearchParams; ip: string }
 type RouteFn = (method: string, path: string, auth: boolean, handler: (ctx: Ctx) => unknown) => void;
@@ -62,6 +63,15 @@ export function registerExtrasRoutes(route: RouteFn, { num }: { num: (v: unknown
   route('PATCH', '/api/performers/:id', true, async ({ db, actor, params, body }) => ({ performerId: await savePerformer(db, actor, num(params[0]), body) }));
   route('POST', '/api/performer-sets', true, async ({ db, actor, body }) => ({ setId: await addPerformerSet(db, actor, body) }));
   route('DELETE', '/api/performer-sets/:id', true, async ({ db, actor, params }) => { await removePerformerSet(db, actor, num(params[0])); return ok; });
+
+  route('GET', '/api/distribution', true, ({ db, actor }) => distributionOverview(db, actor));
+  route('PATCH', '/api/distribution', true, ({ db, actor, body }) => saveDistributionSettings(db, actor, body));
+  route('POST', '/api/distributors/:id/:action', true, async ({ db, actor, params }) => { await decideDistributor(db, actor, num(params[0]), params[1]); return ok; });
+  route('PATCH', '/api/distributors/:id', true, async ({ db, actor, params, body }) => { await setDistributorRate(db, actor, num(params[0]), body.rateBps); return ok; });
+  route('POST', '/api/distributor-payouts/:id/:action', true, async ({ db, actor, params, body }) => {
+    await decidePayout(db, actor, num(params[0]), params[1], body.note);
+    return ok;
+  });
 
   // ---- customer app ----
   const queueLimiter = new RateLimiter(GUEST_QUEUE_PER_IP_PER_HOUR, HOUR_MS);

@@ -4,6 +4,7 @@
 //   /g/<company>/me                  profile and settings (/account is the old address)
 //   /g/<company>/wallet|history|activity|songs|invite      member pages
 //   /g/<company>/rewards|spin|events|games|pets|support   venue-wide extras
+//   /g/<company>/earn                distributor (分销) page; ?dist=CODE on any venue address joins that distributor's team
 //   /g/<company>/queue (or /g/<company>#queue, the staff QR) take a queue number and watch it
 //   /g/<company>/<store>             the dashboard with that location chosen
 //   /g/<company>/<store>/menu        browse the menu
@@ -20,6 +21,7 @@ import { mountShopOrder } from './shop.js';
 import { mountActivity, mountBottles, mountDashboard, mountHistory, mountMe, mountSongs, mountWallet, pickedStore, rememberStore } from './dashboard.js';
 import { applyTheme } from './themes.js';
 import { mountQueue } from './queue.js';
+import { captureDistributor, joinPendingDistributor, mountDistribution } from './distribution.js';
 import { icon } from './icons.js';
 
 /** Venue-wide screens; these words are never store codes. */
@@ -40,6 +42,7 @@ const EXTRAS = {
   pets: (root, ctx) => mountPets(root, ctx),
   support: (root, ctx) => mountSupport(root, ctx),
   queue: (root, ctx) => mountQueue(root, ctx),
+  earn: (root, ctx) => mountDistribution(root, ctx),
 };
 const QUEUE_HASH = '#queue';
 
@@ -236,6 +239,7 @@ async function route() {
       useVenue(v, { title: v.company.name, subtitle: '', company: v.company.code, nav: tabsFor(v) });
       root = frame();
       void claimPendingReferral(v.company.code);
+      if (v.distribution) void joinPendingDistributor(v.company.code);
       if (EXTRAS[second]) {
         const stop = await EXTRAS[second](root, { company: v.company.code, stores: v.stores, features: v.features ?? {}, navigate });
         if (typeof stop === 'function') cleanup = stop;
@@ -283,6 +287,7 @@ async function boot() {
   document.title = t('app.name');
   loadToken();
   captureReferral(parts()[0]);
+  captureDistributor(parts()[0]);
   appEl.addEventListener('click', (e) => {
     const a = e.target.closest('a[data-link]');
     if (a && !e.metaKey && !e.ctrlKey && !e.shiftKey) {

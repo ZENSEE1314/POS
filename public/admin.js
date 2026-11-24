@@ -11,13 +11,14 @@ import { businessAdminSections, visibleSectionIds } from './business-admin.js';
 import { broadcastSection } from './broadcast-admin.js';
 import { botSection } from './bot-admin.js';
 import { performerSection } from './performers-admin.js';
+import { distributionSection } from './distribution-admin.js';
 import { postersSection } from './posters-admin.js';
 import { hasModule, isWeighed, fmtStock, fmtKg } from './business.js';
 
 const TABLE_KINDS = ['bar', 'booth', 'room'];
 const RULE_ROLES = ['sales', 'waiter'];
 const BPS_PER_PERCENT = 100;
-const SECTION_IDS = ['business', 'tables', 'products', 'promotions', 'rules', 'staff', 'broadcasts', 'printers', 'guestApp', 'bot', 'appDesign', 'locations', 'guestPasswords', 'events', 'rewards', 'prizes', 'performers', 'posters'];
+const SECTION_IDS = ['business', 'tables', 'products', 'promotions', 'rules', 'staff', 'broadcasts', 'printers', 'guestApp', 'bot', 'appDesign', 'locations', 'guestPasswords', 'events', 'rewards', 'prizes', 'distribution', 'performers', 'posters'];
 const STATIONS = ['', 'bar', 'kitchen'];
 const UNITS = ['each', 'kg'];
 const SECTION_LABELS = { business: 'biz.section', promotions: 'promo.section' };
@@ -93,6 +94,7 @@ export function mountAdmin(root) {
     ...broadcastSection(() => reload()),
     ...botSection(() => reload()),
     ...performerSection(() => reload()),
+    ...distributionSection(() => reload()),
     ...postersSection(),
   };
 

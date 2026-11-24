@@ -21,6 +21,8 @@ const CAPTION_PX = 30;
 const LINE_GAP = 1.22;
 const MAX_HEADLINE_LINES = 4;
 const PHOTO_SCRIM = 'rgba(0, 0, 0, 0.55)';
+// Neon and photo posters are always dark with light text, whatever the venue's theme: a light theme made them a blank white page.
+const NIGHT = { bg: '#0d0b18', raised: '#2a1d4a', fg: '#f7f4ff' };
 const FRAME_WIDTH = 10;
 const QR_LIGHT = '#ffffff';
 const QR_DARK = '#000000';
@@ -148,7 +150,8 @@ function drawDecoration(ctx, p, template, w, h) {
 }
 
 /** Draws the whole poster. Text colours follow the template: on the colour block the headline sits on the accent. */
-function drawPoster(canvas, { p, template, size, headline, sub, when, photo, qr, venueName }) {
+function drawPoster(canvas, { p: venueColours, template, size, headline, sub, when, photo, qr, venueName }) {
+  const p = photo || template === 'neon' ? { ...venueColours, ...NIGHT } : venueColours;
   const { w, h } = SIZES[size];
   canvas.width = w;
   canvas.height = h;
