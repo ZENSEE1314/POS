@@ -15,7 +15,7 @@ node scripts/simulate.ts http://localhost:3500 dev-admin-key 4 25   # multi-comp
 Dev demo login: company `doloruu`; owner/6666, finance/5555, `flag.manager`/4444, `flag.cashier`/3333, `flag.host`/1111, `flag.waiter`/2222.
 
 ## Deploy (Railway)
-`Dockerfile` + `railway.json` are included. Required variables on the app service:
+`Dockerfile` + `.railway/railway.ts` are included. The service settings (Dockerfile build, `/healthz` health check, custom domains) live in `.railway/railway.ts`, Railway's infrastructure-as-code file that replaced `railway.json` (no longer read after 2026-12-01). Railway does not read it during a deploy: after changing it, run `railway config plan` and then `railway config apply` (needs `npm install` for the `railway` package; on Windows run `railway.exe` directly, not through `env`, or the package's CLI version check fails). Variables stay unmanaged, so secrets are set on Railway and never written to the file. Required variables on the app service:
 
 | Variable | Purpose |
 |---|---|
